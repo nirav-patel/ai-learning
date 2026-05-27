@@ -1,0 +1,15 @@
+{
+  "documents": [
+    "TechCorp allows remote work up to 3 days per week",
+    "Employees can bring pets to work on Fridays",
+    "Company provides health insurance and dental coverage",
+    "Remote workers must use approved equipment"
+  ],
+  "ids": [
+    "doc_1",
+    "doc_2",
+    "doc_3",
+    "doc_4"
+  ],
+  "count": 4
+}

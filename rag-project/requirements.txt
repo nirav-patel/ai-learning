@@ -1,0 +1,14 @@
+# RAG Embedding Models Lab Requirements
+# Core search libraries
+scikit-learn>=1.8.0
+rank-bm25==0.2.2
+pandas>=3.0.2
+numpy>=2.0
+matplotlib>=3.10.0
+
+# Embedding models
+sentence-transformers>=5.3.0
+
+# VSCode/rootline environment
+mcp
+uv

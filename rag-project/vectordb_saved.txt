@@ -1,0 +1,1 @@
+Vector database saved to file successfully

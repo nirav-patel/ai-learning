@@ -1,0 +1,26 @@
+boto3
+botocore
+python-dotenv
+certifi
+langchain
+langchain-aws
+langchain-core
+langchain_classic
+langchain-community
+langchain-text-splitters
+langchain-experimental
+langchain-chroma
+pydantic
+pypdf
+pymupdf
+einops
+yt_dlp
+pydub
+# document splitting extras
+tiktoken
+sentence-transformers
+spacy
+nltk
+# retrieval extras
+rank-bm25
+lark
