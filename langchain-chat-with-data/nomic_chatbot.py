@@ -11,7 +11,8 @@ from chat.ui import run_app
 
 config = AppConfig(
     embed_model_name  = "nomic-ai/nomic-embed-text-v1.5",
-    persist_dir       = os.path.join(os.path.dirname(__file__), "nomic_chroma_db"),
+    weaviate_persist_dir = os.path.join(os.path.dirname(__file__), "nomic_weaviate_db"),
+    weaviate_index_name  = "NomicLangchainDocs",
     source_docs_dir   = os.path.join(os.path.dirname(__file__), "docs"),
     chunk_size        = 512,    # nomic supports up to 8192 tokens — 512 is practical
     chunk_overlap     = 64,

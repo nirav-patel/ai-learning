@@ -152,3 +152,6 @@ python nomic_chatbot.py    # http://localhost:6060  (Nomic, 512-token chunks, 8k
 
 > **Note:** The first run downloads HuggingFace model weights (~90 MB for MiniLM, ~270 MB for Nomic). Subsequent runs use the local cache.
 
+
+# Some other pre-trained sentence transformer model
+BAAI/bge-base-en-v1.5

@@ -16,6 +16,12 @@ import os
 from .config import AppConfig
 
 
+def _sanitize_doc_metadata(doc) -> None:
+    """Normalize metadata fields that break Weaviate schema ingestion."""
+    for key in ("creationDate", "creationdate", "modDate", "moddate"):
+        doc.metadata.pop(key, None)
+
+
 def split_pdf(path: str, config: AppConfig) -> list:
     """Load a single PDF and split it into token-sized chunks.
 
@@ -30,6 +36,9 @@ def split_pdf(path: str, config: AppConfig) -> list:
     from langchain_text_splitters import RecursiveCharacterTextSplitter
 
     pages    = PyMuPDFLoader(path).load()
+    for page in pages:
+        _sanitize_doc_metadata(page)
+
     splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
         encoding_name=config.tiktoken_encoding,
         chunk_size=config.chunk_size,

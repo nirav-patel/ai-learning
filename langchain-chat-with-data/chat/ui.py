@@ -7,7 +7,6 @@ Python process on different ports without any shared global mutable state.
 from __future__ import annotations
 
 import os
-import tempfile
 
 import gradio as gr
 
@@ -33,10 +32,11 @@ def _source_table(docs: list) -> str:
 
 def _make_upload_handler(config: AppConfig, state: AppState):
     """Handle PDF upload: split → embed → persist → wire chain."""
-    from langchain_chroma import Chroma
+    from langchain_weaviate import WeaviateVectorStore
+
     from .embeddings  import make_embeddings
     from .pdf_utils   import split_pdf
-    from .vectorstore import as_mmr_retriever, wire_chain
+    from .vectorstore import _get_client, as_mmr_retriever, wire_chain
 
     def _handle(files, session_id: str) -> tuple[str, list]:
         """Upload one or more PDFs and add them to the vector store.
@@ -63,10 +63,19 @@ def _make_upload_handler(config: AppConfig, state: AppState):
             return "No text could be extracted from the uploaded file(s).", []
 
         print(f"[upload] Embedding {len(all_splits)} chunks …")
-        vectordb = Chroma.from_documents(
+        client = _get_client(config)
+
+        # "Replace corpus" semantics: clear old collection before ingesting.
+        try:
+            client.collections.delete(config.weaviate_index_name)
+        except Exception:
+            pass
+
+        vectordb = WeaviateVectorStore.from_documents(
             documents=all_splits,
             embedding=embeddings,
-            persist_directory=config.persist_dir,
+            client=client,
+            index_name=config.weaviate_index_name,
         )
         retriever    = as_mmr_retriever(vectordb, config)
         wire_chain(retriever, state, config)
@@ -83,10 +92,11 @@ def _make_upload_handler(config: AppConfig, state: AppState):
 
 def _make_add_handler(config: AppConfig, state: AppState):
     """Handle 'Add to DB' — embed new PDFs into an *existing* collection."""
-    from langchain_chroma import Chroma
+    from langchain_weaviate import WeaviateVectorStore
+
     from .embeddings  import make_embeddings
     from .pdf_utils   import split_pdf
-    from .vectorstore import as_mmr_retriever, wire_chain
+    from .vectorstore import _get_client, as_mmr_retriever, wire_chain
 
     def _handle(files) -> str:
         if not files:
@@ -110,18 +120,22 @@ def _make_add_handler(config: AppConfig, state: AppState):
             return "No text could be extracted."
 
         # Load existing collection and add new chunks
-        vectordb = Chroma(
-            persist_directory=config.persist_dir,
-            embedding_function=embeddings,
+        client = _get_client(config)
+        vectordb = WeaviateVectorStore(
+            client=client,
+            index_name=config.weaviate_index_name,
+            text_key="text",
+            embedding=embeddings,
         )
         vectordb.add_documents(all_splits)
         retriever    = as_mmr_retriever(vectordb, config)
         wire_chain(retriever, state, config)
         state.corpus = state.corpus + ", " + ", ".join(names)
+        count = client.collections.get(config.weaviate_index_name).aggregate.over_all().total_count
 
         return (
             f"Added **{len(all_splits)} chunks** from {len(names)} file(s). "
-            f"DB now contains **{vectordb._collection.count()} chunks** total."
+            f"DB now contains **{count} chunks** total."
         )
 
     return _handle
@@ -287,10 +301,10 @@ def build_demo(config: AppConfig, state: AppState) -> gr.Blocks:
 |---|---|
 | LLM | AWS Bedrock `{config.llm_model_id}` |
 | Embeddings | `{config.embed_model_name}` |
-| Vector store | ChromaDB — `{config.persist_dir}` |
+| Vector store | Weaviate (embedded) — `{config.weaviate_persist_dir}` / `{config.weaviate_index_name}` |
 | PDF loader | PyMuPDF — preserves tables, multi-column layouts |
 | Chunking | tiktoken `{config.tiktoken_encoding}` — {config.chunk_size} tokens / {config.chunk_overlap} overlap |
-| Retrieval | MMR top-k={config.retriever_k}, fetch\\_k={config.retriever_fetch_k}, λ={config.mmr_lambda} |
+| Retrieval | Hybrid (vector + BM25), top-k={config.retriever_k}, alpha={config.hybrid_alpha} |
 | History | Per-session `list[HumanMessage | AIMessage]` |
 
 ### How it works
