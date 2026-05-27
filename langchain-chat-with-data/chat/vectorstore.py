@@ -7,6 +7,7 @@ with weaviate.connect_to_weaviate_cloud() or weaviate.connect_to_local().
 """
 from __future__ import annotations
 
+import atexit
 import os
 
 import weaviate
@@ -20,10 +21,32 @@ _weaviate_client: weaviate.WeaviateClient | None = None
 _weaviate_persist_dir: str | None = None
 
 
+def _close_client_at_exit() -> None:
+    """Close embedded Weaviate client to avoid asyncio ResourceWarnings."""
+    global _weaviate_client
+    if _weaviate_client is None:
+        return
+    try:
+        if _weaviate_client.is_connected():
+            _weaviate_client.close()
+    except Exception:
+        # Ignore cleanup failures during interpreter shutdown.
+        pass
+
+
+atexit.register(_close_client_at_exit)
+
+
 def _get_client(config: AppConfig) -> weaviate.WeaviateClient:
     """Return (or lazily create) the embedded Weaviate client."""
     global _weaviate_client, _weaviate_persist_dir
     persist_dir = os.path.abspath(config.weaviate_persist_dir)
+    embedded_env = {
+        # Use Weaviate's native server log level instead of suppressing
+        # subprocess output so real startup failures still surface.
+        "LOG_LEVEL": "error",
+        "DISABLE_TELEMETRY": "true",
+    }
     if (
         _weaviate_client is None
         or not _weaviate_client.is_connected()
@@ -33,7 +56,8 @@ def _get_client(config: AppConfig) -> weaviate.WeaviateClient:
             _weaviate_client.close()
         try:
             _weaviate_client = weaviate.connect_to_embedded(
-                persistence_data_path=persist_dir
+                persistence_data_path=persist_dir,
+                environment_variables=embedded_env,
             )
         except WeaviateStartUpError as exc:
             # Another embedded instance may already be serving default ports.

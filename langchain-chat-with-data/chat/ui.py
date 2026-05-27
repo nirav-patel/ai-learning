@@ -6,9 +6,73 @@ Python process on different ports without any shared global mutable state.
 """
 from __future__ import annotations
 
+import asyncio
+import atexit
 import os
+import sys
+import threading
+
+def _print_runtime_compat_notice() -> None:
+    """Show a clear runtime notice instead of globally suppressing warnings."""
+    major, minor = sys.version_info[:2]
+    if (major, minor) >= (3, 14):
+        print(
+            "[runtime] Python 3.14 detected. "
+            "This stack is most stable on Python 3.11-3.13 and may emit upstream deprecation warnings."
+        )
+
+
+_gradio_loop_local = threading.local()
+
+
+def _get_or_create_thread_loop() -> asyncio.AbstractEventLoop:
+    """Return a reusable event loop for Gradio helper calls outside a running loop."""
+    loop = getattr(_gradio_loop_local, "loop", None)
+    if loop is None or loop.is_closed():
+        loop = asyncio.new_event_loop()
+        _gradio_loop_local.loop = loop
+    asyncio.set_event_loop(loop)
+    return loop
+
+
+def _close_thread_loop_at_exit() -> None:
+    loop = getattr(_gradio_loop_local, "loop", None)
+    if loop is not None and not loop.is_closed():
+        loop.close()
+
+
+def _patch_gradio_asyncio_helpers() -> None:
+    """Work around Gradio creating throwaway event loops on Python 3.14."""
+    if sys.version_info[:2] < (3, 14):
+        return
+
+    import gradio.queueing as gradio_queueing
+    import gradio.utils as gradio_utils
+
+    def safe_get_lock() -> asyncio.Lock:
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            _get_or_create_thread_loop()
+        return asyncio.Lock()
+
+    def safe_get_stop_event() -> asyncio.Event:
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            _get_or_create_thread_loop()
+        return asyncio.Event()
+
+    gradio_utils.safe_get_lock = safe_get_lock
+    gradio_utils.safe_get_stop_event = safe_get_stop_event
+    gradio_queueing.safe_get_lock = safe_get_lock
+
+
+atexit.register(_close_thread_loop_at_exit)
 
 import gradio as gr
+
+_patch_gradio_asyncio_helpers()
 
 from .config     import AppConfig
 from .state      import AppState
@@ -369,6 +433,8 @@ def run_app(config: AppConfig) -> None:
     """Initialise the vector store and launch the Gradio app."""
     from .state      import AppState
     from .vectorstore import initialise
+
+    _print_runtime_compat_notice()
 
     state = AppState()
 

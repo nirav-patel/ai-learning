@@ -31,7 +31,7 @@ learning/
 
 ## Prerequisites
 
-- Python 3.11+
+- Python 3.11-3.13 (recommended). Python 3.14 currently triggers extra third-party deprecation warnings in Gradio/FastAPI stack.
 - AWS credentials configured (`~/.aws/credentials` or environment variables) with Bedrock access
 - AWS region with Bedrock enabled (e.g. `us-east-1`)
 
@@ -70,6 +70,7 @@ Create a `.env` file in the project root if you need to override defaults:
 ```dotenv
 AWS_DEFAULT_REGION=us-east-1
 # LANGCHAIN_API_KEY=<your-langsmith-key>   # optional, for tracing in l5_question_answering.py
+# HF_TOKEN=<your-huggingface-token>        # optional, removes HF unauthenticated warning and raises rate limits
 ```
 
 ---

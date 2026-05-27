@@ -13,6 +13,9 @@ from __future__ import annotations
 
 import os
 
+import pymupdf
+from langchain_core.documents import Document
+
 from .config import AppConfig
 
 
@@ -32,10 +35,24 @@ def split_pdf(path: str, config: AppConfig) -> list:
     Returns:
         List of LangChain Document objects, one per chunk.
     """
-    from langchain_community.document_loaders import PyMuPDFLoader
     from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-    pages    = PyMuPDFLoader(path).load()
+    pages = []
+    with pymupdf.open(path) as pdf:
+        meta = pdf.metadata or {}
+        for idx, page in enumerate(pdf, start=1):
+            pages.append(
+                Document(
+                    page_content=page.get_text("text"),
+                    metadata={
+                        "source": path,
+                        "page": idx,
+                        "title": meta.get("title") or "",
+                        "author": meta.get("author") or "",
+                    },
+                )
+            )
+
     for page in pages:
         _sanitize_doc_metadata(page)
 
