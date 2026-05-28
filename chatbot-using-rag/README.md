@@ -59,6 +59,8 @@ chatbot-using-rag/
 ```bash
 git clone <repo-url>
 cd chatbot-using-rag
+python3 -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e .
 ```
 
@@ -177,14 +179,14 @@ PHOENIX_ENABLED=false
 | Embeddings | HuggingFace (nomic-embed-text-v1.5) / OpenAI / Ollama |
 | Vector store | [Weaviate](https://weaviate.io/) (embedded, no Docker needed) |
 | Retrieval | Hybrid search — dense vector + BM25 (Reciprocal Rank Fusion) |
-| PDF loading | [PyMuPDF](https://pymupdf.readthedocs.io/) |
-| Chunking | tiktoken BPE token-based splitting |
+| PDF loading | [pymupdf4llm](https://pymupdf.readthedocs.io/en/latest/pymupdf4llm/) — Markdown-aware (tables, headings preserved) |
+| Chunking | tiktoken BPE token-based splitting with Markdown-aware separators |
 | UI | [Gradio](https://gradio.app/) |
 | Observability | [Phoenix (Arize)](https://phoenix.arize.com/) |
 | Orchestration | [LangChain LCEL](https://python.langchain.com/docs/concepts/lcel/) |
 
 
 ## TODOs
-- Implement multi-modal RAG for this chatbot like PDF RAG?
+- Implement multi-modal RAG for this chatbot like PDF RAG for PROD?
 - Convert to agentic RAG and add steps like query parser, result evaluator etc?
 - Implement moderation for user queries?
