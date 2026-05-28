@@ -225,3 +225,5 @@ chatbot-using-rag/vector-store/*
 # PDF data sources: local user files — do not commit
 chatbot-using-rag/data-sources/*
 !chatbot-using-rag/data-sources/.gitkeep
+
+.DS_Store
