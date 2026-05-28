@@ -233,8 +233,22 @@ handbook_pages = PyMuPDFLoader(HANDBOOK_PDF).load()
 handbook_splits = splitter.split_documents(handbook_pages)
 
 # Build a corpus that contains the handbook TWICE + the AI roadmap once
-roadmap_pdf    = [p for p in pdf_files if p != HANDBOOK_PDF][0]
-roadmap_splits = splitter.split_documents(PyMuPDFLoader(roadmap_pdf).load())
+# Build a corpus that contains the handbook TWICE + a synthetic "second doc"
+# (uses the last 10 pages of the handbook with a different source label to simulate
+#  a second distinct PDF when only one PDF is present in docs/)
+if len(pdf_files) > 1:
+    roadmap_pdf    = [p for p in pdf_files if p != HANDBOOK_PDF][0]
+    roadmap_splits = splitter.split_documents(PyMuPDFLoader(roadmap_pdf).load())
+else:
+    # Simulate a second document using later pages of the handbook
+    from copy import deepcopy
+    second_doc_pages = PyMuPDFLoader(HANDBOOK_PDF).load()[-10:]
+    roadmap_splits = splitter.split_documents(second_doc_pages)
+    for d in roadmap_splits:
+        d.metadata = dict(d.metadata)
+        d.metadata["source"] = os.path.join(DOCS_DIR, "handbook-part2-synthetic.pdf")
+    print("  (Only 1 PDF found — using last 10 pages as a synthetic second source)")
+
 
 dup_splits = handbook_splits + handbook_splits + roadmap_splits   # handbook duplicated
 print(f"\n  Corpus: handbook×2 ({len(handbook_splits)*2}) + roadmap×1 ({len(roadmap_splits)})"
@@ -381,7 +395,7 @@ filtered = vectordb.similarity_search(
 _show_docs(filtered, "filter={'source': 'India-Handbook-2024.pdf'}")
 
 # Filter: only return chunks from the AI Roadmap PDF
-roadmap_source = roadmap_pdf
+roadmap_source = roadmap_pdf if len(pdf_files) > 1 else os.path.join(DOCS_DIR, "handbook-part2-synthetic.pdf")
 filtered_roadmap = vectordb.similarity_search(
     "skills needed to become an AI or LLM engineer",
 )

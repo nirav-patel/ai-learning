@@ -23,11 +23,11 @@ MODEL_ID = "us.anthropic.claude-sonnet-4-6"
 def create_client():
     """
     Create and return an AWS Bedrock runtime client.
-    Reads AWS_REGION from the environment (defaults to us-west-1).
+    Reads AWS_REGION from the environment (defaults to us-west-2).
     """
     return boto3.client(
         "bedrock-runtime",
-        region_name=os.getenv("AWS_REGION", "us-west-1"),
+        region_name=os.getenv("AWS_REGION", "us-west-2"),
         verify=certifi.where(),
     )
 

@@ -84,7 +84,7 @@ if _ls_key:
 # Requires trust_remote_code=True and task-specific prefixes (see _make_embeddings)
 EMBED_MODEL_NAME  = "nomic-ai/nomic-embed-text-v1.5"
 LLM_MODEL_ID      = "us.anthropic.claude-sonnet-4-6"
-AWS_REGION        = os.getenv("AWS_REGION", "us-west-1")
+AWS_REGION        = os.getenv("AWS_REGION", "us-west-2")
 # Separate persist dir from the old sample_chroma_db (built with all-MiniLM-L6-v2, 384-dim).
 # nomic_chroma_db is built with nomic-embed-text-v1.5 (768-dim) and persisted on first run.
 DEFAULT_PERSIST   = os.path.join(os.path.dirname(__file__), "nomic_chroma_db")

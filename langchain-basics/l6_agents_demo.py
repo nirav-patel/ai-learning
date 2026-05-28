@@ -103,7 +103,7 @@ load_dotenv(find_dotenv())
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 LLM_MODEL_ID = "us.anthropic.claude-sonnet-4-6"
-AWS_REGION   = os.getenv("AWS_REGION", "us-west-1")
+AWS_REGION   = os.getenv("AWS_REGION", "us-west-2")
 
 # ── ReAct system prompt ───────────────────────────────────────────────────────
 # Standard ReAct template; {tools}, {tool_names}, {input}, {agent_scratchpad}

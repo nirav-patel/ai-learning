@@ -23,7 +23,16 @@ pydub
 tiktoken
 sentence-transformers
 spacy
+# After installing spacy, download the English model:
+#   python -m spacy download en_core_web_sm
 nltk
 # retrieval extras
 rank-bm25
 lark
+# agents / demos
+numexpr
+panel
+# SSL / TLS
+truststore
+# HTML parsing (required by WebBaseLoader)
+beautifulsoup4

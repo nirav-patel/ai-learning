@@ -156,3 +156,26 @@ python nomic_chatbot.py    # http://localhost:6060  (Nomic, 512-token chunks, 8k
 
 # Some other pre-trained sentence transformer model
 BAAI/bge-base-en-v1.5
+
+Support for Query Parser? - Enhance query using LLM
+
+User Cross-Encoder vs. Bi-Encoder vs ColBert Encoders
+Retankin in Retrival of chunks for search
+
+
+# Model Config Parameters:
+- temperature :  Adjusts the probability distribution
+- top_p : limits the set of possible tokens that can be chosen
+- repetition_penalty : Discourage the model from repeating words or phrases\\
+
+# RAG improvements
+- Refine system prompt to get accurate answers from LLM
+- Test your system using hallucination-focused benchmarks to ensure system is providing grounded, well-sited responses.
+- Use RAGAs library to evaluate LLM-response. (LLM-as-a-judge based evals)
+    - Response relevancy 
+    - Faithfullness measure
+    - Sensitivities
+
+- Implement RAG Evaluation strategies
+    - Oversavability / Monitoring i.e. by Phoenix  by Arize (Opensource platform ) Can be used along with RAGA libs
+    - Other options DataDog / Grafana

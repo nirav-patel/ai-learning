@@ -1,0 +1,50 @@
+[project]
+name = "chatbot-using-rag"
+version = "0.1.0"
+description = "RAG chatbot — chat with your PDFs using LangChain + Weaviate + Gradio"
+requires-python = ">=3.11,<3.14"
+
+dependencies = [
+    # ── LangChain core ────────────────────────────────────────────────────────
+    "langchain-core>=0.3",
+    "langchain-text-splitters>=0.3",
+
+    # ── LLM providers (install only what you use) ─────────────────────────────
+    "langchain-aws>=0.2",          # llm_provider = "bedrock"
+    "langchain-openai>=0.1",       # llm_provider = "openai"
+    # langchain-ollama>=0.1        # llm_provider = "ollama" — uncomment if needed
+
+    # ── Embedding providers ───────────────────────────────────────────────────
+    "langchain-huggingface>=0.1",  # embed_provider = "huggingface"
+    # langchain-openai covers embed_provider = "openai" (listed above)
+    # langchain-ollama covers embed_provider = "ollama" (uncomment above)
+
+    # ── Vector store ──────────────────────────────────────────────────────────
+    "langchain-weaviate>=0.0.6",
+    "weaviate-client>=4.0",
+
+    # ── PDF loading ───────────────────────────────────────────────────────────
+    "pymupdf>=1.24",
+    "tiktoken>=0.7",
+
+    # ── AWS (Bedrock) ─────────────────────────────────────────────────────────
+    "boto3>=1.34",
+    "certifi>=2024.0",
+
+    # ── UI ────────────────────────────────────────────────────────────────────
+    "gradio>=5.0",
+
+    # ── Observability ─────────────────────────────────────────────────────────
+    "arize-phoenix>=8.0",
+    "openinference-instrumentation-langchain>=0.1",
+
+    # ── Configuration ─────────────────────────────────────────────────────────
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+ollama = ["langchain-ollama>=0.1"]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"

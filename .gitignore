@@ -217,3 +217,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ── chatbot-using-rag ─────────────────────────────────────────────────────────
+# Vector store: auto-created by Weaviate on first run, regenerable — do not commit
+chatbot-using-rag/vector-store/*
+!chatbot-using-rag/vector-store/.gitkeep
+# PDF data sources: local user files — do not commit
+chatbot-using-rag/data-sources/*
+!chatbot-using-rag/data-sources/.gitkeep

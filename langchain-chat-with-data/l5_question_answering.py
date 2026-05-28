@@ -86,7 +86,7 @@ _ = load_dotenv(find_dotenv())
 # ── Configuration ─────────────────────────────────────────────────────────────
 EMBED_MODEL_NAME = "all-MiniLM-L6-v2"
 LLM_MODEL_ID     = "us.anthropic.claude-sonnet-4-6"
-AWS_REGION       = os.getenv("AWS_REGION", "us-west-1")
+AWS_REGION       = os.getenv("AWS_REGION", "us-west-2")
 PERSIST_DIR      = "sample_chroma_db"
 DOCS_DIR         = "docs"
 CHUNK_SIZE       = 1000

@@ -73,7 +73,7 @@ _ = load_dotenv(find_dotenv())
 # ── Configuration ─────────────────────────────────────────────────────────────
 EMBED_MODEL_NAME = "all-MiniLM-L6-v2"
 LLM_MODEL_ID     = "us.anthropic.claude-sonnet-4-6"
-AWS_REGION       = os.getenv("AWS_REGION", "us-west-1")
+AWS_REGION       = os.getenv("AWS_REGION", "us-west-2")
 DOCS_DIR         = "docs"
 PERSIST_DIR      = "sample_chroma_db"          # created by l3_vectorstores_and_embeddings.py
 CHUNK_SIZE       = 1000
