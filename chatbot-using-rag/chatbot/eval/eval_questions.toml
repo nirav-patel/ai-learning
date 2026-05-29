@@ -1,0 +1,36 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# eval_questions.toml — TruLens evaluation question bank
+#
+# This file is the single source of truth for all offline evaluation questions.
+# Edit this file freely — no code changes needed in run_evaluation.py.
+#
+# Structure
+# ─────────
+#   Questions are grouped by difficulty: [easy], [medium], [complex]
+#   They run in order: all easy first, then medium, then complex.
+#
+# Adding questions
+# ────────────────
+#   Append to any section. Each entry is a plain string.
+#   Use triple-quoted strings (''' ... ''') for multi-line / long questions.
+#
+# Categories covered
+# ──────────────────
+#   Easy    (1-6)   — foundational AI/ML definitions
+#   Medium  (7-14)  — core techniques and architectures
+#   Complex (15-20) — advanced RAG internals and LLM research topics
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+# ── Easy: foundational AI/ML definitions ──────────────────────────────────────
+# Suitable for basic sanity-checks. If the chatbot fails these, something is
+# fundamentally wrong with the pipeline or the source documents.
+[easy]
+questions = [
+    "What are the three layers of the AI Engineering Stack defined by Chip Huyen?",
+    "How does the vocabulary size of Mistral 7B compare to GPT-4?",
+    "What are embeddings? What is the difference between embeddings and vector db?",
+    "What is attention?"
+]
+
+

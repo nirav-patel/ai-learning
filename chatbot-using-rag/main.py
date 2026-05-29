@@ -10,21 +10,21 @@ Run:
 To use a different embedding model, set EMBED_MODEL_NAME in .env or override
 the AppConfig field directly below.
 """
+import os
 import warnings
 
-# Suppress DeprecationWarnings from third-party libraries (Gradio / Starlette)
-# that have not yet been updated for Python 3.14 API changes. These warnings
-# originate inside library code and are not actionable from our side.
-warnings.filterwarnings(
-    "ignore",
-    message=r".*HTTP_422_UNPROCESSABLE_ENTITY.*",
-    category=DeprecationWarning,
-)
-warnings.filterwarnings(
-    "ignore",
-    message=r".*asyncio\.iscoroutinefunction.*",
-    category=DeprecationWarning,
-)
+# Tell noisy libraries to stay quiet before they are imported.
+os.environ.setdefault("HF_HUB_VERBOSITY", "error")
+os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
+os.environ.setdefault("GRPC_VERBOSITY", "NONE")   # suppress gRPC info/warn to stderr
+os.environ.setdefault("GLOG_minloglevel", "3")      # suppress absl/glog to FATAL only
+
+# Suppress all Python-level warnings from third-party libraries.
+# Some libraries call filterwarnings("default") after startup, overriding our filter.
+# Overriding showwarning is the belt-and-suspenders approach: even if the filter
+# says "show this warning", the display function simply discards it.
+warnings.filterwarnings("ignore")
+warnings.showwarning = lambda *_args, **_kwargs: None
 
 from chatbot.infrastructure.env_loader import load_env
 

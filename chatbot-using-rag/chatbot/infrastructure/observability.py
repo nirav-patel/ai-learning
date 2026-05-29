@@ -16,9 +16,10 @@ Phoenix 16.x setup (3-step):
 """
 from __future__ import annotations
 
+import io
 import logging
-
-from ..config import AppConfig
+import sys
+from contextlib import redirect_stdout
 
 logger = logging.getLogger(__name__)
 
@@ -44,18 +45,20 @@ def setup_observability(config: AppConfig) -> None:
         return
 
     try:
-        # Step 1: start the Phoenix UI server
-        px.launch_app(port=config.phoenix_port)
+        # Suppress Phoenix's startup print() noise (URLs, deprecation banners).
+        with redirect_stdout(io.StringIO()):
+            # Step 1: start the Phoenix UI server
+            px.launch_app(port=config.phoenix_port)
 
-        # Step 2: register the OTel tracer provider pointing at Phoenix's OTLP endpoint
-        tracer_provider = register(
-            project_name=_PROJECT_NAME,
-            endpoint=f"http://localhost:{config.phoenix_port}/v1/traces",
-            verbose=False,
-        )
+            # Step 2: register the OTel tracer provider pointing at Phoenix's OTLP endpoint
+            tracer_provider = register(
+                project_name=_PROJECT_NAME,
+                endpoint=f"http://localhost:{config.phoenix_port}/v1/traces",
+                verbose=False,
+            )
 
-        # Step 3: instrument LangChain with the wired-up tracer provider
-        LangChainInstrumentor().instrument(tracer_provider=tracer_provider)
+            # Step 3: instrument LangChain with the wired-up tracer provider
+            LangChainInstrumentor().instrument(tracer_provider=tracer_provider)
 
         logger.info(
             "Phoenix tracing active — project '%s' → http://localhost:%d",

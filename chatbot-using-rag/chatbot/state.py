@@ -33,6 +33,9 @@ class AppState:
     def build_chain(self, retriever, config) -> None:
         """Wire a retriever into a new RAGPipeline, lazily creating the LLM.
 
+        If TRULENS_PROD_ENABLED=true, the pipeline's lcel_chain is wrapped with
+        TruChain so every chat turn is automatically recorded to the TruLens DB.
+
         Args:
             retriever: A configured LangChain retriever.
             config:    AppConfig used to create the LLM if not yet initialised.
@@ -45,3 +48,11 @@ class AppState:
 
         self.retriever = retriever
         self.chain = RAGPipeline(retriever, self.llm, self.get_session_history)
+
+        # Optionally activate TruLens live PROD tracing (TRULENS_PROD_ENABLED=true)
+        try:
+            from .eval.prod_tracing import is_enabled, wrap_chain
+            if is_enabled():
+                wrap_chain(self.chain.lcel_chain, config)
+        except Exception:
+            pass  # tracing is optional — never break the chatbot

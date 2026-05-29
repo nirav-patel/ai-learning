@@ -45,6 +45,17 @@ dependencies = [
 [project.optional-dependencies]
 ollama = ["langchain-ollama>=0.1"]
 
+# ── Evaluation (TruLens 2.x RAG Triad metrics) ───────────────────────────────
+# Install with: pip install -e ".[eval]"
+# Requires AWS credentials (Bedrock used for both chatbot LLM and feedback scoring)
+eval = [
+    "trulens-core>=2.8",
+    "trulens-apps-langchain>=2.8",
+    "trulens-providers-bedrock>=2.8",
+    "trulens-dashboard>=2.8",
+    "nest-asyncio>=1.5",
+]
+
 [build-system]
 requires = ["setuptools>=69"]
 build-backend = "setuptools.build_meta"

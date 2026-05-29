@@ -28,5 +28,22 @@ def configure_logging() -> None:
     logging.root.setLevel(level)
     logging.root.addHandler(handler)
 
-    for noisy in ("httpx", "httpcore", "urllib3", "filelock", "gradio"):
-        logging.getLogger(noisy).setLevel(logging.WARNING)
+    # Silence truly noisy libraries at ERROR (suppress their WARNING spam).
+    _error_level = (
+        "huggingface_hub", "transformers", "transformers_modules",
+        "sentence_transformers", "weaviate", "weaviate-client",
+        "grpc", "alembic", "alembic.runtime.migration", "alembic.runtime.plugins",
+        "sqlalchemy", "sqlalchemy.engine",
+        "phoenix.server.app", "phoenix.server.sandbox.sync",
+        "phoenix.server.api.builtin_evaluator_sync",
+    )
+    for name in _error_level:
+        logging.getLogger(name).setLevel(logging.ERROR)
+
+    # Suppress verbose INFO from these but keep WARNING+ visible.
+    _warn_level = (
+        "httpx", "httpcore", "urllib3", "filelock", "gradio",
+        "openinference", "opentelemetry", "boto3", "botocore",
+    )
+    for name in _warn_level:
+        logging.getLogger(name).setLevel(logging.WARNING)
