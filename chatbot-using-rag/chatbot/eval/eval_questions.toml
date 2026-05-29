@@ -34,3 +34,17 @@ questions = [
 ]
 
 
+# ── Medium: core techniques and architectures ─────────────────────────────────
+# Tests whether the chatbot can explain key concepts clearly. Scores here
+# reflect how well your source PDFs cover modern ML/NLP fundamentals.
+[medium]
+questions = [
+    "What are the primary differences between traditional Machine Learning (ML) Engineering and modern AI Engineering?",
+    "Explain the concept of 'AI-as-a-judge' and list at least three specific biases (such as position or self-bias) that developers must account for when using it.",
+    "Explain the role of Change Data Capture (CDC) in syncing the data warehouse and the feature store within the RAG feature pipeline.",
+    "Describe the process of creating a custom instruction dataset for SFT, including data deduplication and synthetically generating data using an LLM.",
+    "What is the role of Bits-per-Character (BPC) or Bits-per-Byte (BPB) in evaluation, and why is 'bits per token' not a reliable metric for comparing different models?",
+    "Describe the common chunking strategies discussed by Chip Huyen, including fixed-size, recursive, and domain-aware splitters.",
+    "How does the LLM Engineer's Handbook recommend evaluating the performance of the 'TwinLlama' model specifically across task-specific and RAG-based metrics?",
+    "What are the 6 core MLOps principles defined in the handbook that ensure an LLM pipeline is reproducible and maintainable?"
+]
