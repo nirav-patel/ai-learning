@@ -206,11 +206,29 @@ def build_demo(config: AppConfig, state: AppState) -> gr.Blocks:
     title          = f"RAG Chatbot — {model_short} (port {config.port})"
     phoenix_link   = f"[Phoenix traces](http://localhost:{config.phoenix_port})" if config.phoenix_enabled else "Disabled"
     backend = config.retrieval_backend.lower().strip()
+    rerank_label = "disabled"
+    if backend == "llamaindex_sentence_window" and config.sentence_window_rerank_enabled:
+        rerank_label = (
+            f"enabled ({config.sentence_window_rerank_model}, top_n={config.sentence_window_rerank_top_n})"
+        )
+
     if backend == "llamaindex_sentence_window":
         retrieval_label = (
             "LlamaIndex Sentence Window, "
             f"top-k={config.retriever_k}, window_size={config.sentence_window_size}"
         )
+        retrieval_steps_label = f"top-{config.retriever_k} sentence-window retrieval"
+        backend_hints = """
+### Active retrieval mode
+- Backend: **llamaindex_sentence_window**
+- Best for local precision and context continuity around matching sentences
+- Optional reranker improves precision for ambiguous / multi-topic questions
+
+### Tuning guidance
+- If answers miss nearby details: increase `SENTENCE_WINDOW_SIZE` (try 4-6)
+- If answers include too much context: decrease `SENTENCE_WINDOW_SIZE` (try 2)
+- If results are noisy: reduce `RETRIEVER_K` and enable sentence-window reranking
+"""
         vector_store_label = (
             f"LlamaIndex local persistence — {config.llamaindex_persist_dir}"
         )
@@ -218,6 +236,18 @@ def build_demo(config: AppConfig, state: AppState) -> gr.Blocks:
         retrieval_label = (
             f"Hybrid (vector + BM25), top-k={config.retriever_k}, alpha={config.hybrid_alpha}"
         )
+        retrieval_steps_label = f"top-{config.retriever_k} chunks via hybrid search (vector + BM25)"
+        backend_hints = """
+### Active retrieval mode
+- Backend: **weaviate_langchain**
+- Best for broad recall and mixed semantic + keyword matching
+- Great default when documents use varied terminology
+
+### Tuning guidance
+- If exact keyword matches are weak: lower `HYBRID_ALPHA` toward 0.5
+- If semantic matches are weak: raise `HYBRID_ALPHA` toward 0.85
+- If answers miss relevant sections: increase `RETRIEVER_K`
+"""
         vector_store_label = (
             f"Weaviate (embedded) — {config.weaviate_persist_dir} / {config.weaviate_index_name}"
         )
@@ -291,6 +321,7 @@ def build_demo(config: AppConfig, state: AppState) -> gr.Blocks:
 | LLM | `{config.llm_provider}` — `{config.llm_model_id}` |
 | Embeddings | `{config.embed_provider}` — `{config.embed_model_name}` |
 | Backend | `{config.retrieval_backend}` |
+| Sentence-window reranker | {rerank_label} |
 | Vector store | {vector_store_label} |
 | PDF loader | PyMuPDF — preserves tables and multi-column layouts |
 | Chunking | tiktoken `{config.tiktoken_encoding}` — {config.chunk_size} tokens / {config.chunk_overlap} overlap |
@@ -300,9 +331,11 @@ def build_demo(config: AppConfig, state: AppState) -> gr.Blocks:
 
 ### How it works
 1. Your question is condensed with chat history into a standalone question
-2. The standalone question retrieves the top-{config.retriever_k} chunks (hybrid search)
+2. The standalone question retrieves {retrieval_steps_label}
 3. The LLM streams an answer using those chunks as context
 4. The Q&A pair is appended to your session history for the next turn
+
+{backend_hints}
 """)
 
         # ── Wire events ───────────────────────────────────────────────────────

@@ -221,13 +221,59 @@ class LlamaIndexSentenceWindowRetriever(RunnableSerializable[str, list[Document]
     operator in the pipeline.
     """
 
-    def __init__(self, index, similarity_top_k: int) -> None:
+    def __init__(
+        self,
+        index,
+        similarity_top_k: int,
+        rerank_enabled: bool = False,
+        rerank_model: str = "BAAI/bge-reranker-base",
+        rerank_top_n: int = 3,
+    ) -> None:
         from llama_index.core.postprocessor import MetadataReplacementPostProcessor
 
         self._retriever = index.as_retriever(similarity_top_k=similarity_top_k)
         self._window_postprocessor = MetadataReplacementPostProcessor(
             target_metadata_key="window"
         )
+        self._reranker = None
+
+        if rerank_enabled:
+            try:
+                import importlib
+
+                sentence_transformer_rerank = None
+                for module_name in (
+                    "llama_index.core.postprocessor",
+                    "llama_index.postprocessor.sbert_rerank",
+                ):
+                    try:
+                        reranker_mod = importlib.import_module(module_name)
+                        sentence_transformer_rerank = getattr(
+                            reranker_mod,
+                            "SentenceTransformerRerank",
+                        )
+                        break
+                    except Exception:
+                        continue
+
+                if sentence_transformer_rerank is None:
+                    raise ImportError("SentenceTransformerRerank class not found")
+
+                self._reranker = sentence_transformer_rerank(
+                    model=rerank_model,
+                    top_n=rerank_top_n,
+                )
+                logger.info(
+                    "Sentence-window reranker enabled — model=%s, top_n=%d",
+                    rerank_model,
+                    rerank_top_n,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Sentence-window reranker requested but unavailable (%s). "
+                    "Install 'llama-index-postprocessor-sbert' and restart.",
+                    exc,
+                )
 
     def invoke(self, query: str, config=None, **kwargs) -> list[Document]:
         from llama_index.core import QueryBundle
@@ -237,6 +283,11 @@ class LlamaIndexSentenceWindowRetriever(RunnableSerializable[str, list[Document]
             nodes,
             query_bundle=QueryBundle(query_str=query),
         )
+        if self._reranker is not None:
+            nodes = self._reranker.postprocess_nodes(
+                nodes,
+                query_bundle=QueryBundle(query_str=query),
+            )
 
         docs: list[Document] = []
         for node_with_score in nodes:
@@ -380,7 +431,13 @@ class LlamaIndexSentenceWindowStore:
 
     @staticmethod
     def _as_retriever(index, config: AppConfig) -> LlamaIndexSentenceWindowRetriever:
-        return LlamaIndexSentenceWindowRetriever(index, similarity_top_k=config.retriever_k)
+        return LlamaIndexSentenceWindowRetriever(
+            index,
+            similarity_top_k=config.retriever_k,
+            rerank_enabled=config.sentence_window_rerank_enabled,
+            rerank_model=config.sentence_window_rerank_model,
+            rerank_top_n=config.sentence_window_rerank_top_n,
+        )
 
     @staticmethod
     def _make_llama_embed_model(config: AppConfig):

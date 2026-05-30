@@ -50,6 +50,7 @@ dependencies = [
 
 [project.optional-dependencies]
 ollama = ["langchain-ollama>=0.1"]
+rerank = ["llama-index-postprocessor-sbert>=0.2"]
 
 # ── Evaluation (TruLens 2.x RAG Triad metrics) ───────────────────────────────
 # Install with: pip install -e ".[eval]"

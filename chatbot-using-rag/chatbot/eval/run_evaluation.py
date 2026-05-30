@@ -47,6 +47,8 @@ _h = logging.StreamHandler()
 _h.setFormatter(logging.Formatter("%(levelname)s  %(message)s"))
 logger.addHandler(_h)
 
+_DASHBOARD_URL_MSG = "Dashboard -> http://localhost:8501"
+
 # ── Project root on sys.path ──────────────────────────────────────────────────
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
@@ -78,7 +80,10 @@ EVAL_QUESTIONS: list[str] = _load_questions()
 
 # ── Infrastructure bootstrap ─────────────────────────────────────────────────
 
-def _build_eval_chain():
+def _build_eval_chain(
+    backend: str | None = None,
+    sentence_window_rerank_enabled: bool | None = None,
+):
     """Build the RAG LCEL chain for evaluation.
 
     Returns:
@@ -88,12 +93,23 @@ def _build_eval_chain():
     from chatbot.providers.embeddings import make_embeddings
     from chatbot.providers.llm import make_llm
     from chatbot.state import AppState
+    from chatbot.storage import make_vector_store
 
     config = AppConfig()
+    if backend:
+        config.retrieval_backend = backend
+    if sentence_window_rerank_enabled is not None:
+        config.sentence_window_rerank_enabled = sentence_window_rerank_enabled
+
     state = AppState()
+    state.vector_store = make_vector_store(config)
     embeddings = make_embeddings(config)
 
-    logger.info("Initialising vector store — model=%s", config.llm_model_id)
+    logger.info(
+        "Initialising vector store — backend=%s, model=%s",
+        config.retrieval_backend,
+        config.llm_model_id,
+    )
     retriever = state.vector_store.initialise(config, embeddings)
     if retriever is None:
         raise RuntimeError(
@@ -224,6 +240,8 @@ def run(
     dashboard_only: bool = False,
     results_only: bool = False,
     judge_model: str | None = None,
+    backend: str | None = None,
+    sentence_window_rerank_enabled: bool | None = None,
 ) -> None:
     """Run the full evaluation suite and print the leaderboard."""
     from trulens.core import TruSession
@@ -233,7 +251,7 @@ def run(
     session = TruSession(database_url=db_url)
 
     if dashboard_only:
-        logger.info("Dashboard → http://localhost:8501")
+        logger.info(_DASHBOARD_URL_MSG)
         session.run_dashboard()
         return
 
@@ -256,7 +274,10 @@ def run(
     from trulens.apps.langchain import TruChain
 
     logger.info("Building RAG eval chain …")
-    eval_chain, config = _build_eval_chain()
+    eval_chain, config = _build_eval_chain(
+        backend=backend,
+        sentence_window_rerank_enabled=sentence_window_rerank_enabled,
+    )
 
     logger.info("Building feedback functions (judge: %s) …", judge_model or config.llm_model_id)
     feedbacks = _build_feedbacks(config, judge_model_id=judge_model)
@@ -265,7 +286,7 @@ def run(
     # synchronously after all questions to avoid incomplete results.
     tru_chain = TruChain(
         eval_chain,
-        app_name="RAGChatbot",
+        app_name=f"RAGChatbot[{config.retrieval_backend}]",
         app_version=app_version,
         feedbacks=feedbacks,
         start_evaluator=False,
@@ -276,7 +297,7 @@ def run(
 
     for i, question in enumerate(EVAL_QUESTIONS, 1):
         logger.info("[%02d/%d] %s", i, total, question[:80])
-        with tru_chain as recording:
+        with tru_chain:
             eval_chain.invoke({"input": question, "chat_history": []})
 
     # Flush all OTEL spans to the database, then compute all feedbacks at once.
@@ -291,7 +312,49 @@ def run(
     _print_leaderboard(session, db_url)
 
     if dashboard:
-        logger.info("Dashboard → http://localhost:8501")
+        logger.info(_DASHBOARD_URL_MSG)
+        session.run_dashboard()
+
+
+def run_ab_compare(
+    app_version: str = "v1",
+    reset: bool = False,
+    dashboard: bool = False,
+    judge_model: str | None = None,
+    sentence_window_rerank_enabled: bool | None = None,
+) -> None:
+    """Run the same question set against both retrieval backends."""
+    from trulens.core import TruSession
+
+    db_path = Path(__file__).parent / "trulens.db"
+    db_url = os.getenv("TRULENS_DB_URL", f"sqlite:///{db_path}")
+    session = TruSession(database_url=db_url)
+
+    if reset:
+        logger.info("Resetting TruLens database …")
+        session.reset_database()
+
+    backends = ["weaviate_langchain", "llamaindex_sentence_window"]
+    for backend in backends:
+        run(
+            app_version=f"{app_version}-{backend}",
+            reset=False,
+            dashboard=False,
+            dashboard_only=False,
+            results_only=False,
+            judge_model=judge_model,
+            backend=backend,
+            sentence_window_rerank_enabled=sentence_window_rerank_enabled,
+        )
+
+    _print_ab_summary(
+        session=session,
+        app_version_prefix=app_version,
+        backends=backends,
+    )
+
+    if dashboard:
+        logger.info(_DASHBOARD_URL_MSG)
         session.run_dashboard()
 
 
@@ -328,6 +391,34 @@ def _print_leaderboard(session, db_url: str) -> None:
     print("=" * 70)
 
 
+def _print_ab_summary(session, app_version_prefix: str, backends: list[str]) -> None:
+    """Print a compact A/B summary from the leaderboard."""
+    leaderboard = session.get_leaderboard()
+
+    print("\n" + "=" * 70)
+    print("  A/B Backend Comparison")
+    print("=" * 70)
+    if leaderboard is None or leaderboard.empty:
+        print("  No results found for A/B comparison.")
+        print("=" * 70)
+        return
+
+    versions = [f"{app_version_prefix}-{backend}" for backend in backends]
+    subset = leaderboard[leaderboard["app_version"].isin(versions)].copy()
+    if subset.empty:
+        print("  No matching app_version rows found.")
+        print("=" * 70)
+        return
+
+    metric_cols = [
+        col for col in ("Answer Relevance", "Context Relevance", "Groundedness")
+        if col in subset.columns
+    ]
+    keep_cols = ["app_name", "app_version", *metric_cols]
+    print(subset[keep_cols].to_string(index=False))
+    print("=" * 70)
+
+
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 def _parse_args() -> argparse.Namespace:
@@ -346,16 +437,41 @@ def _parse_args() -> argparse.Namespace:
                         help="Print leaderboard for past results without re-running.")
     parser.add_argument("--judge-model", default=None, metavar="MODEL_ID",
                         help="Bedrock model ID for the judge (default: same as chatbot).")
+    parser.add_argument("--backend", default=None, metavar="NAME",
+                        help="Override retrieval backend for this run.")
+    parser.add_argument("--ab-compare", action="store_true", dest="ab_compare",
+                        help="Run A/B evaluation for weaviate_langchain vs llamaindex_sentence_window.")
+    parser.add_argument("--sentence-window-rerank", action="store_true", dest="sentence_window_rerank",
+                        help="Enable reranker during sentence-window backend evaluation.")
+    parser.add_argument("--no-sentence-window-rerank", action="store_true", dest="no_sentence_window_rerank",
+                        help="Disable reranker during sentence-window backend evaluation.")
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = _parse_args()
-    run(
-        app_version=args.app_version,
-        reset=args.reset,
-        dashboard=args.dashboard,
-        dashboard_only=args.dashboard_only,
-        results_only=args.results_only,
-        judge_model=args.judge_model,
-    )
+    rerank_override = None
+    if args.sentence_window_rerank:
+        rerank_override = True
+    if args.no_sentence_window_rerank:
+        rerank_override = False
+
+    if args.ab_compare:
+        run_ab_compare(
+            app_version=args.app_version,
+            reset=args.reset,
+            dashboard=args.dashboard,
+            judge_model=args.judge_model,
+            sentence_window_rerank_enabled=rerank_override,
+        )
+    else:
+        run(
+            app_version=args.app_version,
+            reset=args.reset,
+            dashboard=args.dashboard,
+            dashboard_only=args.dashboard_only,
+            results_only=args.results_only,
+            judge_model=args.judge_model,
+            backend=args.backend,
+            sentence_window_rerank_enabled=rerank_override,
+        )

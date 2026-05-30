@@ -50,6 +50,18 @@ class AppConfig:
     sentence_window_size: int = field(
         default_factory=lambda: int(os.getenv("SENTENCE_WINDOW_SIZE", "3"))
     )
+    sentence_window_rerank_enabled: bool = field(
+        default_factory=lambda: os.getenv("SENTENCE_WINDOW_RERANK_ENABLED", "false").lower() == "true"
+    )
+    sentence_window_rerank_model: str = field(
+        default_factory=lambda: os.getenv(
+            "SENTENCE_WINDOW_RERANK_MODEL",
+            "BAAI/bge-reranker-base",
+        )
+    )
+    sentence_window_rerank_top_n: int = field(
+        default_factory=lambda: int(os.getenv("SENTENCE_WINDOW_RERANK_TOP_N", "3"))
+    )
 
     # ── Chunking ──────────────────────────────────────────────────────────────
     # chunk_size is in tokens (tiktoken cl100k_base BPE).
