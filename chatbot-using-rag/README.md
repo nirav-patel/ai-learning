@@ -318,3 +318,4 @@ RAGChatbot v1               0.50              0.57            1.00         ~7s
 - Implement moderation for user queries?
 
 - Sentence Window Retrieval vs. Auto merging retrieval
+- Implement ChatBot / RAG Pipeline using LlamaIndex?
