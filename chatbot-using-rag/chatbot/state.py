@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Callable
 
-from .storage import WeaviateStore
+from .storage import VectorStoreBackend, WeaviateStore
 
 
 @dataclass
@@ -19,7 +19,7 @@ class AppState:
     retriever: object | None       = None   # exposed separately for source-doc display
     llm: object | None             = None   # reused across chain rebuilds
     corpus: str                    = "None loaded"
-    vector_store: WeaviateStore    = field(default_factory=WeaviateStore)
+    vector_store: VectorStoreBackend = field(default_factory=WeaviateStore)
     _sessions: dict                = field(default_factory=dict)
 
     def get_session_history(self, session_id: str) -> list:

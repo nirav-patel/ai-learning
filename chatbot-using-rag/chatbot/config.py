@@ -31,7 +31,24 @@ class AppConfig:
     )
     weaviate_index_name: str = "RagDocs"
     weaviate_persist_dir: str = field(
-        default_factory=lambda: os.getenv("WEAVIATE_PERSIST_DIR", os.path.join(_PROJECT_ROOT, "vector-store"))
+        default_factory=lambda: os.getenv("WEAVIATE_PERSIST_DIR", os.path.join(_PROJECT_ROOT, "vector-store", "weaviate_langchain"))
+    )
+
+    # ── Retrieval backend ──────────────────────────────────────────────────────
+    # Supported:
+    #   weaviate_langchain           -> current LangChain + Weaviate hybrid retriever
+    #   llamaindex_sentence_window   -> LlamaIndex sentence-window retriever
+    retrieval_backend: str = field(
+        default_factory=lambda: os.getenv("RETRIEVAL_BACKEND", "weaviate_langchain")
+    )
+    llamaindex_persist_dir: str = field(
+        default_factory=lambda: os.getenv(
+            "LLAMAINDEX_PERSIST_DIR",
+            os.path.join(_PROJECT_ROOT, "vector-store", "llamaindex-sentence-window"),
+        )
+    )
+    sentence_window_size: int = field(
+        default_factory=lambda: int(os.getenv("SENTENCE_WINDOW_SIZE", "3"))
     )
 
     # ── Chunking ──────────────────────────────────────────────────────────────

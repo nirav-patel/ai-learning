@@ -1,38 +1,87 @@
+# === AWS / Cloud SDK ===
 boto3
 botocore
-weaviate-client
-langchain-weaviate
-python-dotenv
-certifi
-pandas<3
+
+# === LangChain Core + Integrations ===
 langchain
-langchain-aws
 langchain-core
 langchain_classic
 langchain-community
+langchain-aws
+langchain-weaviate
 langchain-text-splitters
 langchain-experimental
 langchain-chroma
-pydantic
+weaviate-client
+
+# === Document Parsing / Media ===
 pypdf
 pymupdf
-einops
 yt_dlp
 pydub
-# document splitting extras
+
+# === Document Splitting / NLP ===
 tiktoken
 sentence-transformers
 spacy
 # After installing spacy, download the English model:
 #   python -m spacy download en_core_web_sm
 nltk
-# retrieval extras
+
+# === Retrieval Extras ===
 rank-bm25
 lark
-# agents / demos
+
+# === Agent / Demo Utilities ===
+einops
 numexpr
 panel
-# SSL / TLS
+
+# === Environment / Networking / Parsing ===
+python-dotenv
+certifi
 truststore
 # HTML parsing (required by WebBaseLoader)
 beautifulsoup4
+
+
+# === Agent + LLM Tools ===
+aisuite==0.1.11
+anthropic
+docstring-parser
+markdown
+mistralai
+openai
+qrcode
+tavily-python>=0.7.12
+textstat
+vertexai
+
+# === Web Framework + API ===
+fastapi
+pydantic
+pydantic[email]
+python-multipart
+requests
+sqlalchemy
+uvicorn
+
+# === Notebook Experience ===
+ipywidgets
+jupyter_server
+nbclassic
+notebook
+
+# === Data Analysis / Display (Optional Enhancements) ===
+duckdb
+matplotlib
+pandas
+seaborn
+tabulate
+tinydb
+
+# === Machine Learning / NLP (Optional Enhancements) ===
+jinja2
+psycopg2-binary
+scikit-learn
+Wikipedia

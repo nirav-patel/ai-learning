@@ -23,6 +23,10 @@ Your question
 2. **Retrieve** — the query fetches the most relevant document chunks via hybrid search (semantic + keyword)
 3. **Answer** — the LLM streams an answer grounded strictly in the retrieved context
 
+Retrieval is backend-pluggable:
+- `weaviate_langchain` (default): hybrid vector + BM25
+- `llamaindex_sentence_window`: sentence-window retrieval for higher local precision
+
 ---
 
 ## Project structure
@@ -112,6 +116,9 @@ All settings live in `AppConfig` (`chatbot/config.py`) and can be overridden via
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server URL |
 | `DATA_SOURCES_DIR` | `./data-sources` | Directory scanned for PDFs on first run |
 | `WEAVIATE_PERSIST_DIR` | `./vector-store` | On-disk path where Weaviate persists data |
+| `RETRIEVAL_BACKEND` | `weaviate_langchain` | Retriever backend: `weaviate_langchain` \| `llamaindex_sentence_window` |
+| `LLAMAINDEX_PERSIST_DIR` | `./vector-store/llamaindex-sentence-window` | LlamaIndex persistence directory |
+| `SENTENCE_WINDOW_SIZE` | `3` | Sentences kept on each side of a hit (LlamaIndex backend only) |
 | `PHOENIX_ENABLED` | `true` | Enable/disable Phoenix tracing |
 | `PHOENIX_PORT` | `6006` | Phoenix dashboard port |
 | `LOG_LEVEL` | `INFO` | Logging level: `DEBUG` \| `INFO` \| `WARNING` \| `ERROR` |
@@ -135,6 +142,13 @@ Or run locally with Ollama:
 LLM_PROVIDER=ollama
 EMBED_PROVIDER=ollama
 OLLAMA_BASE_URL=http://localhost:11434
+```
+
+Enable LlamaIndex sentence-window retrieval:
+
+```env
+RETRIEVAL_BACKEND=llamaindex_sentence_window
+SENTENCE_WINDOW_SIZE=3
 ```
 
 ---
@@ -184,7 +198,7 @@ PHOENIX_ENABLED=false
 | LLM | AWS Bedrock / OpenAI / Ollama |
 | Embeddings | HuggingFace (nomic-embed-text-v1.5) / OpenAI / Ollama |
 | Vector store | [Weaviate](https://weaviate.io/) (embedded, no Docker needed) |
-| Retrieval | Hybrid search — dense vector + BM25 (Reciprocal Rank Fusion) |
+| Retrieval | Pluggable: Weaviate hybrid OR LlamaIndex Sentence Window |
 | PDF loading | [pymupdf4llm](https://pymupdf.readthedocs.io/en/latest/pymupdf4llm/) — Markdown-aware (tables, headings preserved) |
 | Chunking | tiktoken BPE token-based splitting with Markdown-aware separators |
 | UI | [Gradio](https://gradio.app/) |

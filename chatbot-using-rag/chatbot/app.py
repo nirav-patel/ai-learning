@@ -205,6 +205,22 @@ def build_demo(config: AppConfig, state: AppState) -> gr.Blocks:
     model_short    = config.embed_model_name.split("/")[-1]
     title          = f"RAG Chatbot — {model_short} (port {config.port})"
     phoenix_link   = f"[Phoenix traces](http://localhost:{config.phoenix_port})" if config.phoenix_enabled else "Disabled"
+    backend = config.retrieval_backend.lower().strip()
+    if backend == "llamaindex_sentence_window":
+        retrieval_label = (
+            "LlamaIndex Sentence Window, "
+            f"top-k={config.retriever_k}, window_size={config.sentence_window_size}"
+        )
+        vector_store_label = (
+            f"LlamaIndex local persistence — {config.llamaindex_persist_dir}"
+        )
+    else:
+        retrieval_label = (
+            f"Hybrid (vector + BM25), top-k={config.retriever_k}, alpha={config.hybrid_alpha}"
+        )
+        vector_store_label = (
+            f"Weaviate (embedded) — {config.weaviate_persist_dir} / {config.weaviate_index_name}"
+        )
 
     upload_handler = _make_upload_handler(config, state)
     add_handler    = _make_add_handler(config, state)
@@ -274,10 +290,11 @@ def build_demo(config: AppConfig, state: AppState) -> gr.Blocks:
 |---|---|
 | LLM | `{config.llm_provider}` — `{config.llm_model_id}` |
 | Embeddings | `{config.embed_provider}` — `{config.embed_model_name}` |
-| Vector store | Weaviate (embedded) — `{config.weaviate_persist_dir}` / `{config.weaviate_index_name}` |
+| Backend | `{config.retrieval_backend}` |
+| Vector store | {vector_store_label} |
 | PDF loader | PyMuPDF — preserves tables and multi-column layouts |
 | Chunking | tiktoken `{config.tiktoken_encoding}` — {config.chunk_size} tokens / {config.chunk_overlap} overlap |
-| Retrieval | Hybrid (vector + BM25), top-k={config.retriever_k}, alpha={config.hybrid_alpha} |
+| Retrieval | {retrieval_label} |
 | History | Per-session `list[HumanMessage | AIMessage]` |
 | Observability | {phoenix_link} |
 
@@ -320,6 +337,7 @@ def run_app(config: AppConfig) -> None:
     from .infrastructure.logging       import configure_logging
     from .infrastructure.observability import setup_observability
     from .providers.embeddings         import make_embeddings
+    from .storage                      import make_vector_store
 
     configure_logging()
 
@@ -332,6 +350,7 @@ def run_app(config: AppConfig) -> None:
     setup_observability(config)
 
     state      = AppState()
+    state.vector_store = make_vector_store(config)
     embeddings = make_embeddings(config)
 
     logger.info(
