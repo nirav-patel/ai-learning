@@ -1,0 +1,5 @@
+Today's Weather Report
+======================
+Current Temperature: 31.5°C
+High: 34.2°C
+Low: 28.5°C
