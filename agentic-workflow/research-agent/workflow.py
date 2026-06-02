@@ -1,20 +1,28 @@
 """
-Core essay reflection workflow.
+Workflow functions for the research agent.
 
-Implements the three-step reflective writing pattern from the reference lab
-(C1M2_Assignment.md), adapted for AWS Bedrock instead of aisuite/OpenAI.
+Contains two independent pipelines:
 
-Workflow stages
----------------
+Essay reflection pipeline (original)
+-------------------------------------
 1. Draft   — a fast LLM writes an initial essay on the given topic.
 2. Reflect — a reasoning-capable LLM critiques the draft (structure,
              clarity, argument strength, writing style).
 3. Revise  — the first LLM rewrites the essay incorporating the feedback.
+
+Research pipeline (new — tool-calling)
+--------------------------------------
+1. Search  — LLM calls arXiv + Tavily tools to gather sources.
+2. Reflect — LLM produces a structured JSON critique + revised report.
+3. Format  — LLM converts the revised report to styled HTML.
 """
 
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, field
 
 import bedrock_client
+import eval as research_eval
+import research_tools
 
 
 # ---------------------------------------------------------------------------
@@ -144,4 +152,273 @@ def run_essay_workflow(
     print(f"\n{result.revised}\n")
 
     print("Workflow complete.")
+    return result
+
+
+# ===========================================================================
+# Research pipeline — tool-calling workflow
+# ===========================================================================
+
+@dataclass
+class ResearchResult:
+    topic:          str
+    report:         str = ""
+    reflection:     str = ""
+    revised_report: str = ""
+    html:           str = ""
+    messages:       list = field(default_factory=list)
+    eval_report:    str = ""   # component-level source-quality evaluation
+
+
+# ---------------------------------------------------------------------------
+# Step 1 — Generate research report using external tools
+# ---------------------------------------------------------------------------
+
+def generate_research_report_with_tools(
+    prompt: str,
+    model: str = "us.anthropic.claude-sonnet-4-6",
+    max_turns: int = 10,
+) -> tuple[str, list[dict]]:
+    """
+    Generate a detailed research report by letting the LLM call arXiv and
+    Tavily search tools to gather sources before writing.
+
+    Parameters
+    ----------
+    prompt    : Research topic or question.
+    model     : Bedrock model ID to use.
+    max_turns : Maximum number of tool-calling iterations.
+
+    Returns
+    -------
+    tuple[str, list[dict]]
+        final_text — Final research report text.
+        messages   — Full conversation history (for downstream evaluation).
+    """
+    system_prompt = (
+        "You are a research assistant that can search the web and arXiv to write "
+        "detailed, accurate, and properly sourced research reports.\n\n"
+        "🔍 Use the available tools when appropriate (e.g., to find scientific papers "
+        "or current web content).\n"
+        "📚 Cite sources whenever relevant. Do NOT omit citations for brevity.\n"
+        "🌐 When possible, include full URLs (arXiv links, web sources, etc.).\n"
+        "✍️  Use an academic tone, organise output into clearly labelled sections, "
+        "and include inline citations or footnotes as needed.\n"
+        "🚫 Do not include placeholder text such as '(citation needed)' or "
+        "'(citations omitted)'."
+    )
+
+    tools = [
+        research_tools.ARXIV_BEDROCK_TOOL_DEF,
+        research_tools.TAVILY_BEDROCK_TOOL_DEF,
+        research_tools.WIKIPEDIA_BEDROCK_TOOL_DEF,
+    ]
+
+    final_text, messages = bedrock_client.run_tool_loop(
+        model_id=model,
+        system_prompt=system_prompt,
+        initial_prompt=prompt,
+        tools=tools,
+        tool_mapping=research_tools.TOOL_MAPPING,
+        max_turns=max_turns,
+        max_tokens=4000,
+        temperature=0.7,
+    )
+
+    return final_text, messages
+
+
+# ---------------------------------------------------------------------------
+# Step 2 — Structured reflection + rewrite
+# ---------------------------------------------------------------------------
+
+def reflection_and_rewrite(
+    report,
+    model: str = "us.anthropic.claude-sonnet-4-6",
+    temperature: float = 0.3,
+) -> dict:
+    """
+    Produce a structured critique and an improved version of the report.
+
+    Accepts raw text OR the messages list returned by
+    ``generate_research_report_with_tools``.
+
+    Uses two separate Bedrock calls to avoid token budget issues and fragile
+    JSON-inside-JSON escaping:
+      1. Generate reflection text only.
+      2. Generate revised report using the original + reflection.
+
+    Returns
+    -------
+    dict with keys:
+        "reflection"    — structured critique covering Strengths, Limitations,
+                          Suggestions, and Opportunities.
+        "revised_report"— improved version of the input report.
+    """
+    report_text = research_tools.parse_input(report)
+
+    # ── Call 1: reflection only ───────────────────────────────────────────
+    print("  Step 2a: Generating reflection… 🔎")
+    reflection_prompt = f"""You are an academic reviewer.
+
+Analyse the research report below and write a structured critique.
+
+Use exactly these four headings (in this order):
+- Strengths
+- Limitations
+- Suggestions
+- Opportunities
+
+Be specific: point to concrete passages and explain how to improve them.
+Do NOT rewrite the report — critique only.
+
+Research report:
+{report_text}
+"""
+    reflection = bedrock_client.generate_text_with_system(
+        model_id=model,
+        system_prompt="You are an academic reviewer and editor.",
+        user_prompt=reflection_prompt,
+        max_tokens=2000,
+        temperature=temperature,
+    )
+
+    # ── Call 2: revised report using the reflection ───────────────────────
+    print("  Step 2b: Rewriting report with feedback… ✍️")
+    rewrite_prompt = f"""You are an expert research editor.
+
+Below is an original research report followed by a structured critique.
+Rewrite the report so that it addresses every point raised in the critique.
+Improve clarity, depth, and academic tone. Keep all citations and URLs.
+Return ONLY the full revised report — no preamble, no commentary.
+
+--- Original Report ---
+{report_text}
+
+--- Critique ---
+{reflection}
+"""
+    revised_report = bedrock_client.generate_text_with_system(
+        model_id=model,
+        system_prompt="You are an expert research editor.",
+        user_prompt=rewrite_prompt,
+        max_tokens=4000,
+        temperature=temperature,
+    )
+
+    return {
+        "reflection": reflection.strip(),
+        "revised_report": revised_report.strip(),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Step 3 — Convert report to styled HTML
+# ---------------------------------------------------------------------------
+
+def convert_report_to_html(
+    report,
+    model: str = "us.anthropic.claude-sonnet-4-6",
+    temperature: float = 0.5,
+) -> str:
+    """
+    Convert a plaintext research report into a well-structured, styled HTML page.
+
+    Accepts raw text OR the messages list from the tool-calling step.
+
+    Returns
+    -------
+    str : A complete HTML document string.
+    """
+    report_text = research_tools.parse_input(report)
+
+    system_prompt = "You convert plaintext research reports into full clean HTML documents."
+
+    user_prompt = f"""Convert the research report below into a complete, well-structured HTML document.
+
+Requirements:
+- Return ONLY valid HTML — no markdown, no code fences, no commentary.
+- Include a proper <html>, <head> (with <meta charset="UTF-8"> and a <style> block), and <body>.
+- Use semantic tags: <h1> for the title, <h2> for section headers, <p> for paragraphs.
+- All URLs must be wrapped in <a href="..."> tags so they are clickable.
+- Preserve all citations and references from the original report.
+- Add a clean, readable CSS style (e.g., max-width, line-height, font-family, link colours).
+- Do NOT truncate or omit any content from the report.
+
+Research report:
+{report_text}
+"""
+
+    html = bedrock_client.generate_text_with_system(
+        model_id=model,
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        max_tokens=6000,
+        temperature=temperature,
+    )
+
+    # Strip any accidental markdown code fences
+    html = re.sub(r"^```(?:html)?\s*", "", html.strip(), flags=re.MULTILINE)
+    html = re.sub(r"\s*```$", "", html.strip(), flags=re.MULTILINE)
+
+    return html.strip()
+
+
+# ---------------------------------------------------------------------------
+# Orchestrator — full research pipeline
+# ---------------------------------------------------------------------------
+
+def run_research_pipeline(
+    topic: str,
+    generation_model: str = "us.anthropic.claude-sonnet-4-6",
+    reflection_model: str = "us.anthropic.claude-sonnet-4-6",
+) -> ResearchResult:
+    """
+    End-to-end research pipeline.
+
+    Steps:
+      1  Search + generate report   — generation_model (with tools)
+      2  Reflect + rewrite          — reflection_model
+      3  Convert to HTML            — generation_model
+    """
+    result = ResearchResult(topic=topic)
+
+    # ── Step 1: Research with tools ───────────────────────────────────────
+    print("Step 1: Generating research report with tools… 🔍")
+    result.report, result.messages = generate_research_report_with_tools(
+        topic, generation_model
+    )
+
+    # ── Component-level eval: source quality ──────────────────────────────
+    print("  📊 Evaluating source quality…")
+    # Evaluate against raw Tavily tool results (more precise)
+    tool_flag, tool_eval = research_eval.evaluate_tool_call_sources(result.messages)
+    # Also evaluate cited URLs in the final report text
+    report_flag, report_eval = research_eval.evaluate_report_sources(result.report)
+
+    # Prefer tool-call eval if Tavily results were found; fall back to report eval
+    if "No tavily_search_tool results" not in tool_eval:
+        result.eval_report = tool_eval
+        eval_flag = tool_flag
+    else:
+        result.eval_report = report_eval
+        eval_flag = report_flag
+
+    status = "✅ PASS" if eval_flag else "❌ FAIL"
+    print(f"  Source quality eval: {status}")
+    print(result.eval_report)
+
+    # ── Step 2: Reflect + rewrite ─────────────────────────────────────────
+    print("Step 2: Reflecting on report… 🧠")
+    reflection_output = reflection_and_rewrite(result.report, reflection_model)
+    result.reflection = reflection_output["reflection"]
+    result.revised_report = reflection_output["revised_report"]
+    print(f"\nReflection:\n{result.reflection[:300]}…\n")
+
+    # ── Step 3: Convert to HTML ───────────────────────────────────────────
+    print("Step 3: Converting report to HTML… 🌐")
+    result.html = convert_report_to_html(result.revised_report, generation_model)
+    print(f"\nHTML preview (first 300 chars):\n{result.html[:300]}…\n")
+
+    print("Research pipeline complete. ✅")
     return result
