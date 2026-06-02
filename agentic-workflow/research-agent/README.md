@@ -3,7 +3,9 @@
 Implements two complementary agentic workflows on top of **AWS Bedrock**:
 
 1. **Essay Reflection Pipeline** — one LLM drafts, a second critiques, and the first revises.
-2. **Research Pipeline with Tools** — LLM calls arXiv + Tavily search tools, reflects on the report, and publishes styled HTML.
+2. **Research Pipeline with Tools** — supports both linear and autonomous modes:
+  - **Linear mode**: search -> reflection -> HTML
+  - **Autonomous mode**: planner -> dynamic agent routing -> quality gate -> remediation (if needed) -> HTML
 
 ---
 
@@ -25,7 +27,7 @@ Topic
 
 A single LLM pass often produces a structurally sound but argumentatively weak first draft. The reflection step uses a more analytically capable model to surface concrete issues; the revision step incorporates all feedback.
 
-### Pipeline 2 — Research with Tools (search → reflection → HTML)
+### Pipeline 2A — Research with Tools (linear)
 
 ```
 Prompt
@@ -41,6 +43,41 @@ Prompt
 ```
 
 The LLM autonomously decides when to call tools, gathers sources, writes a cited report, critiques it, rewrites it, and outputs a self-contained HTML file.
+
+### Pipeline 2B — Autonomous Agentic Execution (planner -> executor)
+
+```
+Topic
+  │
+  ▼
+┌─────────────────┐
+│   PlannerAgent  │  -> returns list[str] plan steps
+└─────────────────┘
+          │
+          ▼
+┌───────────────────────────────────────────────────────────┐
+│ Executor loop                                             │
+│ - route each step to research_agent / writer_agent /      │
+│   editor_agent                                             │
+│ - pass step history as context                            │
+│ - collect outputs into shared state                       │
+└───────────────────────────────────────────────────────────┘
+          │
+          ▼
+┌──────────────────────────┐
+│ Source Quality Gate      │ -> eval.py
+└──────────────────────────┘
+          │
+     fail ▼  pass
+┌──────────────────────────┐
+│ Autonomous Remediation   │ -> re-research + re-edit
+└──────────────────────────┘
+          │
+          ▼
+┌──────────────────────────┐
+│ HTML Packaging           │
+└──────────────────────────┘
+```
 
 ---
 
@@ -70,6 +107,7 @@ cd agentic-workflow/research-agent
 python main.py                   # run both pipelines
 python main.py --essay-only      # essay reflection pipeline only
 python main.py --research-only   # research + tools pipeline only
+python main.py --research-only --autonomous  # planner + executor mode
 ```
 
 Pipeline 2 saves the final HTML report to `research_report.html` in the same directory.
@@ -94,8 +132,8 @@ Pipeline 2 saves the final HTML report to `research_report.html` in the same dir
 
 | Role | Default model |
 |------|--------------|
-| Generation / Revision (essay) | `us.amazon.nova-2-lite-v1:0` |
-| Reflection / Research (tools) | `us.anthropic.claude-sonnet-4-6` |
+| Generation / Revision / Tools | `us.amazon.nova-2-lite-v1:0` |
+| Reflection / Planning / Routing | `us.anthropic.claude-sonnet-4-6` |
 
 Edit the constants at the top of `main.py` to swap models.
 
@@ -119,7 +157,30 @@ Edit the constants at the top of `main.py` to swap models.
 | `generate_research_report_with_tools(prompt, model)` | Research topic | `(report_str, messages_list)` — cited report + full conversation history |
 | `reflection_and_rewrite(report, model, temperature)` | Report text or messages list | `dict` with `"reflection"` and `"revised_report"` keys |
 | `convert_report_to_html(report, model, temperature)` | Report text or messages list | Complete HTML document string |
-| `run_research_pipeline(topic, generation_model, reflection_model)` | Topic + model names | `ResearchResult` dataclass + saves `research_report.html` |
+| `planner_agent(topic, model)` | Topic | `list[str]` execution plan |
+| `route_step_to_agent(step, model)` | One plan step | `(agent_name, normalized_task)` |
+| `run_autonomous_research_pipeline(topic, generation_model, reflection_model, ...)` | Topic + model names | `ResearchResult` with plan, execution log, remediation flag |
+| `run_research_pipeline(topic, generation_model, reflection_model, autonomous=False)` | Topic + model names + mode | `ResearchResult` dataclass + saves `research_report.html` |
+
+### Autonomous State and Result Fields
+
+Autonomous mode uses `AgentExecutionState` to carry short-term memory across steps:
+
+- `plan_steps`
+- `history`
+- `messages`
+- `current_report`
+- `reflection`
+- `revised_report`
+- `eval_passed`
+- `eval_report`
+- `remediated`
+
+`ResearchResult` now also includes:
+
+- `plan_steps`
+- `execution_log`
+- `remediated`
 
 ### Evaluation (`eval.py`)
 
@@ -136,6 +197,8 @@ The evaluation runs automatically in `run_research_pipeline` after Step 1 and is
 python eval.py research_report.html
 ```
 
+In autonomous mode, failing the quality gate triggers a remediation loop automatically (new research pass with stricter source requirements, then revision), followed by re-evaluation.
+
 ### Bedrock Client (`bedrock_client.py`)
 
 | Function | Purpose |
@@ -144,6 +207,13 @@ python eval.py research_report.html
 | `generate_text_with_system(model_id, system_prompt, user_prompt, ...)` | Single-turn with system prompt |
 | `run_tool_loop(model_id, system_prompt, initial_prompt, tools, tool_mapping, ...)` | Agentic tool-calling loop — handles `toolUse` / `toolResult` rounds until final answer |
 | `generate_with_image(model_id, prompt, image_path, ...)` | Multimodal (text + image) generation |
+
+### Tests
+
+`tests.py` now includes autonomous-mode validation helpers used by `main.py` when `--autonomous` is enabled:
+
+- `test_autonomous_plan(plan_steps)`
+- `test_autonomous_execution_log(execution_log)`
 
 ---
 
@@ -155,3 +225,5 @@ python eval.py research_report.html
 - **Structured JSON output** — prompting the model to return only valid JSON (no response-format API needed on Bedrock).
 - **HTML report generation** — converting plain-text research output to shareable, styled HTML via prompt engineering.
 - **Separation of roles** — fast model drafts; stronger model critiques and researches; avoids over-spending on every step.
+- **Planner + executor autonomy** — explicit planning and dynamic step routing remove rigid fixed-order orchestration.
+- **Self-healing loop** — quality-gated remediation improves reliability when initial source quality is weak.

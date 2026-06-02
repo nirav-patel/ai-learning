@@ -18,6 +18,7 @@ Usage:
     python main.py                  # runs both pipelines
     python main.py --research-only  # skip essay, run research pipeline only
     python main.py --essay-only     # run essay pipeline only
+    python main.py --autonomous     # run research pipeline with planner+executor
 """
 
 import sys
@@ -29,7 +30,7 @@ from workflow import run_essay_workflow, run_research_pipeline
 # ---------------------------------------------------------------------------
 
 # Fast model for draft generation and revision
-GENERATION_MODEL = "us.anthropic.claude-sonnet-4-6" #"us.amazon.nova-2-lite-v1:0"
+GENERATION_MODEL = "us.amazon.nova-2-lite-v1:0"
 
 # Reasoning model for critique — benefits from stronger analytical capability
 REFLECTION_MODEL = "us.anthropic.claude-sonnet-4-6"
@@ -42,6 +43,7 @@ if __name__ == "__main__":
     args = sys.argv[1:]
     run_essay    = "--research-only" not in args
     run_research = "--essay-only"    not in args
+    autonomous   = "--autonomous" in args
 
     # ──────────────────────────────────────────────────────────────────────
     # Pipeline 1 — Essay reflection (original)
@@ -103,6 +105,7 @@ if __name__ == "__main__":
             topic=research_topic,
             generation_model=GENERATION_MODEL,
             reflection_model=REFLECTION_MODEL,
+            autonomous=autonomous,
         )
 
         sep = "-" * 60
@@ -111,6 +114,13 @@ if __name__ == "__main__":
         print("=" * 60)
         print(f"\n📄 Report (first 500 chars):\n{sep}\n{research_result.report[:500]}…")
         print(f"\n📊 Source Quality Eval:\n{sep}\n{research_result.eval_report}")
+        if autonomous:
+            print(f"\n🗺️ Plan Steps:\n{sep}\n" + "\n".join(f"{i+1}. {s}" for i, s in enumerate(research_result.plan_steps)))
+            print(f"\n🤖 Remediation Triggered: {'Yes' if research_result.remediated else 'No'}")
+            if research_result.execution_log:
+                print(f"\n📜 Execution Log:\n{sep}")
+                for i, row in enumerate(research_result.execution_log, start=1):
+                    print(f"{i}. agent={row['agent']} | task={row['task']}")
         print(f"\n🧠 Reflection:\n{sep}\n{research_result.reflection[:500]}…")
         print(f"\n✍️  Revised Report (first 500 chars):\n{sep}\n{research_result.revised_report[:500]}…")
         print(f"\n🌐 HTML Preview (first 500 chars):\n{sep}\n{research_result.html[:500]}…")
@@ -126,6 +136,8 @@ if __name__ == "__main__":
             test_reflection_and_rewrite,
             test_convert_report_to_html,
             test_evaluate_report_sources,
+            test_autonomous_plan,
+            test_autonomous_execution_log,
         )
         from eval import evaluate_report_sources
         print("\n" + "=" * 60)
@@ -147,4 +159,11 @@ if __name__ == "__main__":
         print("Testing evaluate_report_sources (component-level eval):")
         flag, report = evaluate_report_sources(research_result.report)
         test_evaluate_report_sources(flag, report)
+        if autonomous:
+            print("─" * 50)
+            print("Testing autonomous planner output:")
+            test_autonomous_plan(research_result.plan_steps)
+            print("─" * 50)
+            print("Testing autonomous execution log:")
+            test_autonomous_execution_log(research_result.execution_log)
         print()

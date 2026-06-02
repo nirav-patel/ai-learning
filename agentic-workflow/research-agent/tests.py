@@ -313,3 +313,70 @@ def test_evaluate_report_sources(flag: bool, eval_report: str) -> None:
         return cases
 
     print_feedback(g())
+
+
+# ---------------------------------------------------------------------------
+# Test 8: autonomous planner output
+# ---------------------------------------------------------------------------
+
+def test_autonomous_plan(plan_steps: list[str]) -> None:
+    def g():
+        cases = []
+
+        t = test_case()
+        if not isinstance(plan_steps, list):
+            t.failed = True
+            t.msg = "autonomous plan must be a list"
+            t.want = list
+            t.got = type(plan_steps)
+            return [t]
+        cases.append(t)
+
+        t = test_case()
+        if len(plan_steps) < 3 or not all(isinstance(s, str) and s.strip() for s in plan_steps):
+            t.failed = True
+            t.msg = "plan should contain at least 3 non-empty string steps"
+            t.want = "list[str] length >= 3"
+            t.got = plan_steps
+        cases.append(t)
+
+        return cases
+
+    print_feedback(g())
+
+
+# ---------------------------------------------------------------------------
+# Test 9: autonomous execution log
+# ---------------------------------------------------------------------------
+
+def test_autonomous_execution_log(execution_log: list[dict]) -> None:
+    def g():
+        cases = []
+
+        t = test_case()
+        if not isinstance(execution_log, list):
+            t.failed = True
+            t.msg = "execution_log must be a list"
+            t.want = list
+            t.got = type(execution_log)
+            return [t]
+        cases.append(t)
+
+        t = test_case()
+        allowed = {"research_agent", "writer_agent", "editor_agent"}
+        bad_rows = [
+            r for r in execution_log
+            if not isinstance(r, dict)
+            or r.get("agent") not in allowed
+            or not isinstance(r.get("task"), str)
+        ]
+        if bad_rows:
+            t.failed = True
+            t.msg = "execution_log rows must include valid agent and task"
+            t.want = "dict rows with agent in {research_agent, writer_agent, editor_agent}"
+            t.got = bad_rows[:2]
+        cases.append(t)
+
+        return cases
+
+    print_feedback(g())

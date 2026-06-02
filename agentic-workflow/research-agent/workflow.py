@@ -17,12 +17,18 @@ Research pipeline (new — tool-calling)
 3. Format  — LLM converts the revised report to styled HTML.
 """
 
+import ast
+import json
 import re
 from dataclasses import dataclass, field
 
 import bedrock_client
 import eval as research_eval
 import research_tools
+
+
+DEFAULT_GENERATION_MODEL = "us.anthropic.claude-sonnet-4-6"
+DEFAULT_REFLECTION_MODEL = "us.anthropic.claude-sonnet-4-6"
 
 
 # ---------------------------------------------------------------------------
@@ -168,6 +174,246 @@ class ResearchResult:
     html:           str = ""
     messages:       list = field(default_factory=list)
     eval_report:    str = ""   # component-level source-quality evaluation
+    plan_steps:     list[str] = field(default_factory=list)
+    execution_log:  list[dict] = field(default_factory=list)
+    remediated:     bool = False
+
+
+@dataclass
+class AgentExecutionState:
+    """Shared state passed between planner/executor agent steps."""
+
+    topic: str
+    plan_steps: list[str] = field(default_factory=list)
+    history: list[dict] = field(default_factory=list)
+    messages: list[dict] = field(default_factory=list)
+    current_report: str = ""
+    reflection: str = ""
+    revised_report: str = ""
+    html: str = ""
+    eval_passed: bool = False
+    eval_report: str = ""
+    remediated: bool = False
+
+
+def _default_plan(topic: str) -> list[str]:
+    """Fallback plan used if planner output cannot be parsed."""
+    return [
+        f"Research authoritative sources on: {topic} and produce a cited draft report.",
+        "Draft a coherent markdown report using the gathered evidence and links.",
+        "Review the draft critically and improve clarity, structure, and citation quality.",
+        "Generate the final research report as markdown.",
+    ]
+
+
+def planner_agent(topic: str, model: str = DEFAULT_REFLECTION_MODEL) -> list[str]:
+    """Create an executable plan as a Python list of step strings."""
+    user_prompt = f"""You are a planning agent for a multi-agent research system.
+
+Return ONLY a valid Python list of strings.
+Each item must be one executable step.
+Available capabilities:
+- research agent (tool-based retrieval and synthesis)
+- writer agent (drafting/structuring)
+- editor agent (reflection and revision)
+
+Topic: {topic}
+"""
+    raw = bedrock_client.generate_text_with_system(
+        model_id=model,
+        system_prompt="You generate concise execution plans.",
+        user_prompt=user_prompt,
+        max_tokens=1200,
+        temperature=0.2,
+    )
+
+    try:
+        parsed = ast.literal_eval(raw.strip())
+        if isinstance(parsed, list) and len(parsed) >= 3 and all(isinstance(s, str) for s in parsed):
+            return parsed
+    except (ValueError, SyntaxError):
+        pass
+
+    return _default_plan(topic)
+
+
+def route_step_to_agent(
+    step: str,
+    model: str = DEFAULT_REFLECTION_MODEL,
+) -> tuple[str, str]:
+    """Choose the best agent for a step and return (agent_name, normalized_task)."""
+    routing_prompt = f"""Choose one agent for the instruction below.
+
+Return ONLY JSON with this schema:
+{{"agent": "research_agent|writer_agent|editor_agent", "task": "normalized instruction"}}
+
+Instruction: {step}
+"""
+    raw = bedrock_client.generate_text_with_system(
+        model_id=model,
+        system_prompt="You are an execution router for a research workflow.",
+        user_prompt=routing_prompt,
+        max_tokens=300,
+        temperature=0,
+    ).strip()
+
+    try:
+        data = json.loads(raw)
+        agent = str(data.get("agent", "")).strip()
+        task = str(data.get("task", step)).strip() or step
+        if agent in {"research_agent", "writer_agent", "editor_agent"}:
+            return agent, task
+    except json.JSONDecodeError:
+        pass
+
+    # Heuristic fallback routing if model output is malformed.
+    low = step.lower()
+    if any(k in low for k in ["search", "research", "sources", "citations", "evidence"]):
+        return "research_agent", step
+    if any(k in low for k in ["edit", "critique", "revise", "improve", "review"]):
+        return "editor_agent", step
+    return "writer_agent", step
+
+
+def _evaluate_source_quality(report_text: str, messages: list[dict]) -> tuple[bool, str]:
+    """Evaluate source quality, preferring tool-level evidence when available."""
+    tool_flag, tool_eval = research_eval.evaluate_tool_call_sources(messages)
+    report_flag, report_eval = research_eval.evaluate_report_sources(report_text)
+
+    if "No tavily_search_tool results" not in tool_eval:
+        return tool_flag, tool_eval
+    return report_flag, report_eval
+
+
+def research_agent(task: str, state: AgentExecutionState, model: str) -> str:
+    """Run tool-based retrieval/synthesis with prior-step context."""
+    prior_context = "\n\n".join(
+        f"Step {i + 1} ({h['agent']}):\n{h['output'][:800]}"
+        for i, h in enumerate(state.history[-3:])
+    )
+    prompt = f"""Task: {task}
+
+Topic: {state.topic}
+
+Prior context (may be empty):
+{prior_context}
+
+Requirements:
+- Use tools as needed.
+- Prioritize authoritative sources and include URLs.
+- Produce a comprehensive report with citations.
+"""
+    report, messages = generate_research_report_with_tools(prompt=prompt, model=model, max_turns=10)
+    state.current_report = report
+    state.messages = messages
+    return report
+
+
+def writer_agent(task: str, state: AgentExecutionState, model: str) -> str:
+    """Draft or restructure report content using existing research context."""
+    base_text = state.revised_report or state.current_report
+    if not base_text:
+        base_text = "No report exists yet. Create a first complete draft from the task."
+
+    user_prompt = f"""You are writing the next version of a research report.
+
+Task: {task}
+Topic: {state.topic}
+
+Current draft:
+{base_text}
+
+Return the full updated markdown report only.
+"""
+    out = bedrock_client.generate_text_with_system(
+        model_id=model,
+        system_prompt="You are a technical research writer.",
+        user_prompt=user_prompt,
+        max_tokens=4000,
+        temperature=0.5,
+    )
+    state.current_report = out.strip()
+    return state.current_report
+
+
+def editor_agent(task: str, state: AgentExecutionState, model: str) -> str:
+    """Critique and revise the current report using the existing editor routine."""
+    base_report = state.current_report or state.revised_report
+    if not base_report:
+        base_report = f"Topic: {state.topic}\n\nTask: {task}"
+
+    out = reflection_and_rewrite(base_report, model=model)
+    state.reflection = out["reflection"]
+    state.revised_report = out["revised_report"]
+    state.current_report = state.revised_report
+    return state.revised_report
+
+
+def run_autonomous_research_pipeline(
+    topic: str,
+    generation_model: str = DEFAULT_GENERATION_MODEL,
+    reflection_model: str = DEFAULT_REFLECTION_MODEL,
+    limit_steps: bool = True,
+    max_steps: int = 4,
+) -> ResearchResult:
+    """Planner + executor workflow with dynamic routing and eval-gated remediation."""
+    state = AgentExecutionState(topic=topic)
+    plan_steps = planner_agent(topic, model=reflection_model)
+    if limit_steps:
+        plan_steps = plan_steps[: min(len(plan_steps), max_steps)]
+    state.plan_steps = plan_steps
+
+    print("Step 0: Planning autonomous workflow… 🗺️")
+    for idx, step in enumerate(plan_steps, start=1):
+        print(f"  {idx}. {step}")
+
+    for idx, step in enumerate(plan_steps, start=1):
+        agent_name, task = route_step_to_agent(step, model=reflection_model)
+        print(f"\nStep {idx}: {agent_name} executing → {task}")
+
+        if agent_name == "research_agent":
+            output = research_agent(task, state, model=generation_model)
+        elif agent_name == "editor_agent":
+            output = editor_agent(task, state, model=reflection_model)
+        else:
+            output = writer_agent(task, state, model=generation_model)
+
+        state.history.append({"step": step, "agent": agent_name, "task": task, "output": output})
+
+    # Quality gate and autonomous remediation if quality is below threshold.
+    eval_flag, eval_report = _evaluate_source_quality(state.current_report, state.messages)
+    state.eval_passed = eval_flag
+    state.eval_report = eval_report
+
+    if not state.eval_passed:
+        print("\nSource quality failed threshold; running autonomous remediation…")
+        remediation_task = (
+            "Re-run research prioritizing authoritative domains (arxiv.org, nature.com, "
+            "science.org, nasa.gov, major universities), include explicit URLs, and improve citation quality."
+        )
+        research_agent(remediation_task, state, model=generation_model)
+        editor_agent("Revise report after remediation and strengthen evidence quality.", state, model=reflection_model)
+        state.remediated = True
+        state.eval_passed, state.eval_report = _evaluate_source_quality(state.current_report, state.messages)
+
+    final_report = state.revised_report or state.current_report
+    final_html = convert_report_to_html(final_report, model=generation_model)
+
+    result = ResearchResult(
+        topic=topic,
+        report=state.current_report,
+        reflection=state.reflection,
+        revised_report=final_report,
+        html=final_html,
+        messages=state.messages,
+        eval_report=state.eval_report,
+        plan_steps=state.plan_steps,
+        execution_log=state.history,
+        remediated=state.remediated,
+    )
+
+    print("\nAutonomous research pipeline complete. ✅")
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -176,7 +422,7 @@ class ResearchResult:
 
 def generate_research_report_with_tools(
     prompt: str,
-    model: str = "us.anthropic.claude-sonnet-4-6",
+    model: str = DEFAULT_GENERATION_MODEL,
     max_turns: int = 10,
 ) -> tuple[str, list[dict]]:
     """
@@ -234,7 +480,7 @@ def generate_research_report_with_tools(
 
 def reflection_and_rewrite(
     report,
-    model: str = "us.anthropic.claude-sonnet-4-6",
+    model: str = DEFAULT_REFLECTION_MODEL,
     temperature: float = 0.3,
 ) -> dict:
     """
@@ -318,7 +564,7 @@ Return ONLY the full revised report — no preamble, no commentary.
 
 def convert_report_to_html(
     report,
-    model: str = "us.anthropic.claude-sonnet-4-6",
+    model: str = DEFAULT_GENERATION_MODEL,
     temperature: float = 0.5,
 ) -> str:
     """
@@ -370,8 +616,9 @@ Research report:
 
 def run_research_pipeline(
     topic: str,
-    generation_model: str = "us.anthropic.claude-sonnet-4-6",
-    reflection_model: str = "us.anthropic.claude-sonnet-4-6",
+    generation_model: str = DEFAULT_GENERATION_MODEL,
+    reflection_model: str = DEFAULT_REFLECTION_MODEL,
+    autonomous: bool = False,
 ) -> ResearchResult:
     """
     End-to-end research pipeline.
@@ -381,6 +628,13 @@ def run_research_pipeline(
       2  Reflect + rewrite          — reflection_model
       3  Convert to HTML            — generation_model
     """
+    if autonomous:
+        return run_autonomous_research_pipeline(
+            topic=topic,
+            generation_model=generation_model,
+            reflection_model=reflection_model,
+        )
+
     result = ResearchResult(topic=topic)
 
     # ── Step 1: Research with tools ───────────────────────────────────────
