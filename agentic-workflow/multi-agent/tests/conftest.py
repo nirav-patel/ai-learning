@@ -25,22 +25,23 @@ from tools.search_tool import TavilySearchTool
 # ─── LLM response helpers ─────────────────────────────────────────────────────
 
 
-def _make_llm_message(content: str, tool_calls: list | None = None) -> SimpleNamespace:
-    """Return an object mimicking ``response.choices[0].message``."""
-    msg = SimpleNamespace(content=content, tool_calls=tool_calls)
-    return msg
-
-
-def _make_llm_response(content: str, tool_calls: list | None = None) -> SimpleNamespace:
-    """Return an object mimicking the full LLM completion response."""
-    return SimpleNamespace(choices=[SimpleNamespace(message=_make_llm_message(content, tool_calls))])
+def _make_llm_response(content: str, tool_use_blocks: list | None = None) -> SimpleNamespace:
+    """Return an Anthropic-style response object."""
+    if tool_use_blocks:
+        return SimpleNamespace(stop_reason="tool_use", content=tool_use_blocks)
+    return SimpleNamespace(
+        stop_reason="end_turn",
+        content=[SimpleNamespace(type="text", text=content)],
+    )
 
 
 def _make_tool_call(name: str, arguments: dict[str, Any], call_id: str = "call_001") -> SimpleNamespace:
-    """Return an object mimicking an LLM tool-call entry."""
+    """Return an Anthropic ToolUseBlock-like object."""
     return SimpleNamespace(
         id=call_id,
-        function=SimpleNamespace(name=name, arguments=json.dumps(arguments)),
+        type="tool_use",
+        name=name,
+        input=arguments,
     )
 
 
@@ -50,23 +51,25 @@ def _make_tool_call(name: str, arguments: dict[str, Any], call_id: str = "call_0
 @pytest.fixture()
 def mock_llm_client():
     """
-    MagicMock of an aisuite client.
+    MagicMock of an ``anthropic.AnthropicBedrock`` client.
 
-    By default each call returns a simple final text answer.
-    Override ``mock_llm_client.chat.completions.create.return_value`` in
-    individual tests to simulate tool calls or specific content.
+    By default each call returns a simple final text answer (``stop_reason="end_turn"``).
+    Override ``mock_llm_client.messages.create.return_value`` in individual tests
+    to simulate tool use or specific content.
     """
     client = MagicMock()
-    client.chat.completions.create.return_value = _make_llm_response(
-        "This is a mock LLM response."
-    )
+    client.messages.create.return_value = _make_llm_response("This is a mock LLM response.")
     return client
 
 
 @pytest.fixture()
 def mock_image_client():
-    """MagicMock of an ``openai.OpenAI`` client for image generation."""
-    # Create a 1×1 white PNG as a minimal valid PNG bytes
+    """
+    MagicMock of a ``boto3`` ``bedrock-runtime`` client for Amazon Titan image gen.
+
+    ``invoke_model`` returns a response whose ``body`` stream yields a Titan-shaped
+    JSON payload: ``{"images": ["<base64_png>"]}``.
+    """
     import struct
     import zlib
 
@@ -83,9 +86,26 @@ def mock_image_client():
         return header + ihdr + idat + iend
 
     b64_png = base64.b64encode(_create_minimal_png()).decode()
+    titan_body = json.dumps({"images": [b64_png]}).encode()
+
     client = MagicMock()
-    client.images.generate.return_value = SimpleNamespace(
-        data=[SimpleNamespace(b64_json=b64_png)]
+    client.invoke_model.return_value = {
+        "body": SimpleNamespace(read=lambda: titan_body)
+    }
+    return client
+
+
+@pytest.fixture()
+def mock_copywriter_client():
+    """
+    MagicMock of an ``anthropic.AnthropicBedrock`` client.
+
+    ``messages.create`` returns a response with a single text content block,
+    mimicking the Anthropic SDK response shape.
+    """
+    client = MagicMock()
+    client.messages.create.return_value = SimpleNamespace(
+        content=[SimpleNamespace(text='{"quote": "Style is eternal.", "justification": "Matches bold frames trend."}')]
     )
     return client
 

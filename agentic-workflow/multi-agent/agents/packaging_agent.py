@@ -22,7 +22,7 @@ class PackagingAgent:
     Produces a Markdown campaign report from the upstream agents' outputs.
 
     Args:
-        client: aisuite-compatible LLM client.
+        client: Anthropic Bedrock LLM client (`anthropic.AnthropicBedrock`).
         model: Model identifier.
         output_dir: Directory where the report file is saved.
     """
@@ -86,17 +86,15 @@ class PackagingAgent:
 
     def _beautify_summary(self, raw_summary: str) -> str:
         """Rewrite the raw trend summary in executive-friendly prose."""
-        response = self._client.chat.completions.create(
+        response = self._client.messages.create(
             model=self._model,
+            max_tokens=1024,
+            system=(
+                "You are a marketing communication expert. "
+                "Rewrite trend summaries to be clear, professional, and engaging "
+                "for a CEO-level audience. Preserve all key information."
+            ),
             messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a marketing communication expert. "
-                        "Rewrite trend summaries to be clear, professional, and engaging "
-                        "for a CEO-level audience. Preserve all key information."
-                    ),
-                },
                 {
                     "role": "user",
                     "content": (
@@ -106,7 +104,7 @@ class PackagingAgent:
                 },
             ],
         )
-        return response.choices[0].message.content.strip()
+        return response.content[0].text.strip()
 
     @staticmethod
     def _build_markdown(

@@ -31,7 +31,7 @@ class BaseTool(ABC):
     @abstractmethod
     def definition(self) -> ToolDefinition:
         """
-        Return the JSON-schema tool descriptor understood by aisuite / OpenAI.
+        Return the JSON-schema tool descriptor understood by the Anthropic SDK.
 
         Example::
 

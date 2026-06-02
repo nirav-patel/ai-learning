@@ -4,8 +4,10 @@ Copywriter Agent.
 Receives the campaign image (as a local file path) and the trend summary,
 then writes a short campaign quote + justification using a multimodal LLM call.
 
-The agent sends the image as a base64-encoded data URL so that it works
-without any public hosting of the image.
+The agent uses the Anthropic SDK with AWS Bedrock (``anthropic.AnthropicBedrock``)
+because Claude's vision API requires the Anthropic-native image content format
+(``type: image``, ``source.type: base64``) rather than the OpenAI-style
+``image_url`` format.  All other agents use the Anthropic Bedrock SDK for text-only calls.
 """
 from __future__ import annotations
 
@@ -24,8 +26,10 @@ class CopywriterAgent:
     Produces a campaign quote from an image and a trend summary.
 
     Args:
-        client: aisuite-compatible LLM client that supports multimodal messages.
-        model: Model string (must support vision, e.g. ``"openai:gpt-4o"``).
+        client: ``anthropic.AnthropicBedrock`` (or any Anthropic-compatible client)
+                that exposes a ``messages.create`` method.
+        model: Bedrock model ID (bare, without ``aws:`` prefix), e.g.
+               ``"us.anthropic.claude-sonnet-4-6"``.
     """
 
     name = "CopywriterAgent"
@@ -50,13 +54,15 @@ class CopywriterAgent:
         logger.info("[%s] Building campaign quote", self.name)
 
         b64_image = self._encode_image(image_path)
-        messages = self._build_messages(b64_image, trend_summary)
+        messages, system = self._build_messages(b64_image, trend_summary)
 
-        response = self._client.chat.completions.create(
+        response = self._client.messages.create(
             model=self._model,
+            max_tokens=512,
+            system=system,
             messages=messages,
         )
-        content = response.choices[0].message.content.strip()
+        content = response.content[0].text.strip()
 
         parsed = self._parse_response(content)
         parsed["image_path"] = str(image_path)
@@ -72,24 +78,29 @@ class CopywriterAgent:
         with open(image_path, "rb") as fh:
             return base64.b64encode(fh.read()).decode("utf-8")
 
-    def _build_messages(self, b64_image: str, trend_summary: str) -> list[dict[str, Any]]:
-        """Build the multimodal message list for the LLM call."""
-        return [
-            {
-                "role": "system",
-                "content": (
-                    "You are a creative copywriter that crafts elegant, memorable campaign "
-                    "quotes based on a visual and marketing trend context."
-                ),
-            },
+    def _build_messages(
+        self, b64_image: str, trend_summary: str
+    ) -> tuple[list[dict[str, Any]], str]:
+        """
+        Build the message list and system prompt for the Anthropic messages API.
+
+        Returns a ``(messages, system)`` tuple so callers can pass them separately
+        to ``client.messages.create(system=..., messages=...)``.
+        """
+        system = (
+            "You are a creative copywriter that crafts elegant, memorable campaign "
+            "quotes based on a visual and marketing trend context."
+        )
+        messages = [
             {
                 "role": "user",
                 "content": [
                     {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/png;base64,{b64_image}",
-                            "detail": "auto",
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "image/png",
+                            "data": b64_image,
                         },
                     },
                     {
@@ -108,8 +119,9 @@ Respond with raw JSON only — no markdown fences or extra text.
 """.strip(),
                     },
                 ],
-            },
+            }
         ]
+        return messages, system
 
     def _parse_response(self, content: str) -> dict[str, str]:
         """Extract the JSON dict from the LLM response."""

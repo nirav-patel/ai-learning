@@ -29,22 +29,46 @@ def _optional(key: str, default: str) -> str:
     return os.getenv(key, default)
 
 
+# ── AWS / Bedrock ─────────────────────────────────────────────────────────────
+
+AWS_REGION: str = _optional("AWS_REGION", "us-east-1")
+"""AWS region where Bedrock models are enabled (e.g. us-east-1, eu-west-1)."""
+
+AWS_ACCESS_KEY_ID: str = os.getenv("AWS_ACCESS_KEY_ID", "")
+"""AWS access key — optional if using an IAM role or AWS profile."""
+
+AWS_SECRET_ACCESS_KEY: str = os.getenv("AWS_SECRET_ACCESS_KEY", "")
+"""AWS secret key — optional if using an IAM role or AWS profile."""
+
+AWS_PROFILE: str | None = os.getenv("AWS_PROFILE")
+"""Optional AWS named profile (from ~/.aws/credentials). Used when explicit keys are absent."""
+
 # ── LLM ───────────────────────────────────────────────────────────────────────
 
-OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
-"""OpenAI API key — required at runtime, validated lazily so tests can run."""
+AGENT_MODEL: str = _optional(
+    "AGENT_MODEL", "us.anthropic.claude-sonnet-4-6"
+)
+"""Bedrock model ID used by all text-based agents (bare ID, no ``aws:`` prefix).
 
-AGENT_MODEL: str = _optional("AGENT_MODEL", "openai:gpt-4o-mini")
-"""aisuite model string used by all text-based agents."""
+Example: ``us.anthropic.claude-sonnet-4-6`` or ``anthropic.claude-3-haiku-20240307-v1:0``.
+"""
 
-IMAGE_MODEL: str = _optional("IMAGE_MODEL", "dall-e-3")
-"""OpenAI image model used by the Graphic Designer agent."""
+COPYWRITER_MODEL: str = _optional(
+    "COPYWRITER_MODEL", "us.anthropic.claude-sonnet-4-6"
+)
+"""Bedrock model ID used by the CopywriterAgent for multimodal (vision) calls.
+
+Uses the bare Bedrock model ID (without the ``aws:`` prefix) because the Anthropic
+SDK for Bedrock accepts the ID directly.
+"""
+
+# ── Image generation ──────────────────────────────────────────────────────────
+
+IMAGE_MODEL: str = _optional("IMAGE_MODEL", "amazon.titan-image-generator-v2:0")
+"""Bedrock image model ID used by the Graphic Designer agent (Amazon Titan)."""
 
 IMAGE_SIZE: str = _optional("IMAGE_SIZE", "1024x1024")
-"""Dimensions for generated images."""
-
-IMAGE_QUALITY: str = _optional("IMAGE_QUALITY", "standard")
-"""Quality level for image generation: standard | hd (dall-e-3 only)."""
+"""Dimensions for generated images in ``WxH`` format (e.g. ``512x512``, ``1024x1024``)."""
 
 # ── Web Search ─────────────────────────────────────────────────────────────────
 

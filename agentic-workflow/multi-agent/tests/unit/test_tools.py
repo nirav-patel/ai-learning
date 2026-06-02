@@ -168,4 +168,51 @@ class TestToolRegistry:
         msg = registry.build_tool_response_message(tool_call, result_data)
         assert msg["role"] == "tool"
         assert msg["tool_call_id"] == "call_abc"
+        # Lists are wrapped in {"results": [...]} so Bedrock toolResult.content[].json
+        # receives a JSON object (dict) rather than a JSON array, which it rejects.
+        assert json.loads(msg["content"]) == {"results": result_data}
+
+    def test_build_tool_response_message_dict_passthrough(self, catalog_tool):
+        """Dict results are forwarded as-is (already a JSON object)."""
+        registry = ToolRegistry()
+        registry.register(catalog_tool)
+        tool_call = SimpleNamespace(
+            id="call_xyz",
+            function=SimpleNamespace(name="product_catalog_tool", arguments="{}"),
+        )
+        result_data = {"status": "ok", "count": 3}
+        msg = registry.build_tool_response_message(tool_call, result_data)
         assert json.loads(msg["content"]) == result_data
+
+    def test_build_tool_response_message_scalar_wrapped(self, catalog_tool):
+        """Scalar results are wrapped in {"value": ...} for Bedrock compatibility."""
+        registry = ToolRegistry()
+        registry.register(catalog_tool)
+        tool_call = SimpleNamespace(
+            id="call_scalar",
+            function=SimpleNamespace(name="product_catalog_tool", arguments="{}"),
+        )
+        msg = registry.build_tool_response_message(tool_call, 42)
+        assert json.loads(msg["content"]) == {"value": 42}
+
+    def test_anthropic_definitions_format(self, catalog_tool):
+        """anthropic_definitions converts OpenAI schema → Anthropic input_schema format."""
+        registry = ToolRegistry()
+        registry.register(catalog_tool)
+        defs = registry.anthropic_definitions
+        assert len(defs) == 1
+        defn = defs[0]
+        assert defn["name"] == catalog_tool.name
+        assert "description" in defn
+        assert "input_schema" in defn
+        assert defn["input_schema"]["type"] == "object"
+
+    def test_dispatch_anthropic(self, catalog_tool):
+        """dispatch_anthropic routes a ToolUseBlock (dict input, not JSON string)."""
+        registry = ToolRegistry()
+        registry.register(catalog_tool)
+        block = SimpleNamespace(name="product_catalog_tool", input={"max_items": 2})
+        results = registry.dispatch_anthropic(block)
+        assert isinstance(results, list)
+        assert len(results) <= 2
+

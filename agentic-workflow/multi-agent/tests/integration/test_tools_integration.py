@@ -14,15 +14,10 @@ import os
 import pytest
 
 TAVILY_AVAILABLE = bool(os.getenv("TAVILY_API_KEY"))
-OPENAI_AVAILABLE = bool(os.getenv("OPENAI_API_KEY"))
 
 skip_no_tavily = pytest.mark.skipif(
     not TAVILY_AVAILABLE,
     reason="TAVILY_API_KEY not set — skipping live Tavily test",
-)
-skip_no_openai = pytest.mark.skipif(
-    not OPENAI_AVAILABLE,
-    reason="OPENAI_API_KEY not set — skipping live OpenAI test",
 )
 
 
@@ -60,12 +55,8 @@ class TestTavilySearchToolIntegration:
         assert "query" in defn["function"]["parameters"]["properties"]
 
 
-@skip_no_openai
 class TestProductCatalogToolIntegration:
-    """
-    The catalog tool is fully in-memory, but this test class exists to confirm
-    it works correctly in the same environment where OpenAI tests run.
-    """
+    """The catalog tool is fully in-memory — always runs without external credentials."""
 
     def test_catalog_returns_data(self):
         from tools.catalog_tool import ProductCatalogTool

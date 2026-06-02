@@ -3,7 +3,8 @@ Graphic Designer Agent.
 
 Takes a trend summary from the Market Research Agent and:
   1. Uses the LLM to write a vivid image-generation prompt + marketing caption.
-  2. Calls the OpenAI Images API (DALL-E) to generate the campaign visual.
+  2. Calls Amazon Titan Image Generator (via boto3 / AWS Bedrock) to generate
+     the campaign visual.
   3. Saves the image to disk and returns metadata.
 
 This agent does **not** use the tool-based agentic loop because image generation
@@ -28,12 +29,12 @@ class GraphicDesignerAgent:
     Generates a campaign image from trend insights.
 
     Args:
-        llm_client: aisuite-compatible client (used for prompt + caption generation).
-        image_client: ``openai.OpenAI`` client (used for image generation).
-        model: LLM model string for text generation.
-        image_model: OpenAI image model (e.g. ``"dall-e-3"``).
-        image_size: Dimensions string (e.g. ``"1024x1024"``).
-        image_quality: Quality level — ``"standard"`` or ``"hd"`` (dall-e-3 only).
+        llm_client: ``anthropic.AnthropicBedrock`` client for prompt + caption generation.
+        image_client: ``boto3`` ``bedrock-runtime`` client for Amazon Titan image gen.
+        model: Bedrock model ID for text generation (e.g. ``"us.anthropic.claude-sonnet-4-6"``).
+        image_model: Bedrock model ID for image generation
+                     (e.g. ``"amazon.titan-image-generator-v2:0"``).
+        image_size: Dimensions string in ``WxH`` format (e.g. ``"1024x1024"``).
         output_dir: Directory where the generated PNG is saved.
     """
 
@@ -44,18 +45,27 @@ class GraphicDesignerAgent:
         llm_client: Any,
         image_client: Any,
         model: str,
-        image_model: str = "dall-e-3",
+        image_model: str = "amazon.titan-image-generator-v2:0",
         image_size: str = "1024x1024",
-        image_quality: str = "standard",
         output_dir: Path = Path("./output"),
     ) -> None:
         self._llm_client = llm_client
         self._image_client = image_client
         self._model = model
         self._image_model = image_model
-        self._image_size = image_size
-        self._image_quality = image_quality
         self._output_dir = Path(output_dir)
+
+        # Parse "WxH" → (width, height) once at construction time
+        try:
+            w, h = image_size.lower().split("x")
+            self._image_width = int(w)
+            self._image_height = int(h)
+        except (ValueError, AttributeError):
+            logger.warning(
+                "[%s] Invalid IMAGE_SIZE '%s'; falling back to 1024x1024", self.name, image_size
+            )
+            self._image_width = 1024
+            self._image_height = 1024
 
     # ── Public entry point ────────────────────────────────────────────────────
 
@@ -78,12 +88,10 @@ class GraphicDesignerAgent:
         """
         logger.info("[%s] Generating image prompt and caption", self.name)
 
-        # Step 1: Ask the LLM to write an image prompt + caption
         prompt, caption = self._generate_prompt_and_caption(trend_summary, caption_style)
         logger.debug("[%s] Image prompt: %s", self.name, prompt)
 
-        # Step 2: Generate the image
-        logger.info("[%s] Calling image generation API", self.name)
+        logger.info("[%s] Calling Bedrock image generation API", self.name)
         image_path = self._generate_and_save_image(prompt, output_filename)
 
         return {
@@ -115,17 +123,15 @@ Please output a JSON object with exactly two keys:
 Respond with raw JSON only — no markdown fences or extra text.
 """.strip()
 
-        response = self._llm_client.chat.completions.create(
+        response = self._llm_client.messages.create(
             model=self._model,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
+            max_tokens=1024,
+            system=system,
+            messages=[{"role": "user", "content": user}],
         )
-        content = response.choices[0].message.content.strip()
+        content = response.content[0].text.strip()
 
         try:
-            # Be tolerant of markdown fences the model may add
             match = re.search(r"\{.*\}", content, re.DOTALL)
             parsed: dict[str, str] = json.loads(match.group(0)) if match else {}
             return parsed.get("prompt", content), parsed.get("caption", "")
@@ -134,23 +140,38 @@ Respond with raw JSON only — no markdown fences or extra text.
             return content, ""
 
     def _generate_and_save_image(self, prompt: str, filename: str) -> Path:
-        """Call the OpenAI Images API and save the result as a PNG."""
+        """
+        Call the Amazon Titan Image Generator via boto3 and save the result as a PNG.
+
+        Titan request body reference:
+        https://docs.aws.amazon.com/bedrock/latest/userguide/titan-image-models.html
+        """
         self._output_dir.mkdir(parents=True, exist_ok=True)
         output_path = self._output_dir / filename
 
-        response = self._image_client.images.generate(
-            model=self._image_model,
-            prompt=prompt,
-            size=self._image_size,
-            quality=self._image_quality,
-            n=1,
-            response_format="b64_json",
+        payload = {
+            "taskType": "TEXT_IMAGE",
+            "textToImageParams": {"text": prompt},
+            "imageGenerationConfig": {
+                "numberOfImages": 1,
+                "quality": "standard",
+                "width": self._image_width,
+                "height": self._image_height,
+                "cfgScale": 8.0,
+            },
+        }
+
+        response = self._image_client.invoke_model(
+            modelId=self._image_model,
+            body=json.dumps(payload),
+            contentType="application/json",
+            accept="application/json",
         )
 
-        b64_data = response.data[0].b64_json
+        response_body: dict = json.loads(response["body"].read())
+        b64_data: str = response_body["images"][0]
         img_bytes = base64.b64decode(b64_data)
 
-        # Use Pillow to verify / re-save as PNG
         try:
             from PIL import Image  # lazy import — optional at import time
 
@@ -161,3 +182,4 @@ Respond with raw JSON only — no markdown fences or extra text.
 
         logger.info("[%s] Image saved to %s", self.name, output_path)
         return output_path
+

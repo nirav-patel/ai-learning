@@ -7,7 +7,7 @@ Usage::
     registry.register(TavilySearchTool(...))
     registry.register(ProductCatalogTool())
 
-    # Get the schema list to pass to aisuite / OpenAI
+    # Get the schema list to pass to the LLM (OpenAI-compatible format)
     tools_schema = registry.definitions
 
     # Dispatch a tool_call object returned by the LLM
@@ -95,7 +95,7 @@ class ToolRegistry:
 
     def dispatch(self, tool_call: Any) -> Any:
         """
-        Dispatch an LLM tool_call object (aisuite / OpenAI format).
+        Dispatch an LLM tool_call object (OpenAI-compatible format).
 
         Parses ``tool_call.function.name`` and ``tool_call.function.arguments``
         and routes to the matching registered tool.
@@ -111,6 +111,37 @@ class ToolRegistry:
         logger.debug("Dispatching tool '%s' with args: %s", name, kwargs)
         return self.call(name, **kwargs)
 
+    @property
+    def anthropic_definitions(self) -> list[dict[str, Any]]:
+        """Return Anthropic-compatible tool schemas for ``client.messages.create(tools=...)``."""
+        result = []
+        for tool in self._tools.values():
+            fn = tool.definition["function"]
+            result.append({
+                "name": fn["name"],
+                "description": fn.get("description", ""),
+                "input_schema": fn["parameters"],
+            })
+        return result
+
+    def dispatch_anthropic(self, tool_use_block: Any) -> Any:
+        """
+        Dispatch an Anthropic ``ToolUseBlock`` (``block.type == "tool_use"``).
+
+        Unlike ``dispatch``, the block's ``input`` field is already a dict —
+        no JSON parsing needed.
+
+        Args:
+            tool_use_block: Object with ``.name`` and ``.input`` (dict) attributes.
+
+        Returns:
+            Tool result (any JSON-serialisable value).
+        """
+        name = tool_use_block.name
+        kwargs = tool_use_block.input
+        logger.debug("Dispatching tool '%s' with args: %s", name, kwargs)
+        return self.call(name, **kwargs)
+
     def build_tool_response_message(self, tool_call: Any, result: Any) -> dict[str, Any]:
         """
         Build an OpenAI-compatible ``role=tool`` message dict.
@@ -121,10 +152,22 @@ class ToolRegistry:
 
         Returns:
             Message dict ready to append to the conversation history.
+
+        Note:
+            AWS Bedrock's converse API requires ``toolResult.content[].json`` to be a
+            JSON *object* (dict), not an array. Lists are wrapped in ``{"results": [...]}``
+            to satisfy this constraint while preserving full fidelity.
         """
+        if isinstance(result, list):
+            serializable: Any = {"results": result}
+        elif not isinstance(result, dict):
+            serializable = {"value": result}
+        else:
+            serializable = result
+
         return {
             "role": "tool",
             "tool_call_id": tool_call.id,
             "name": tool_call.function.name,
-            "content": json.dumps(result),
+            "content": json.dumps(serializable),
         }

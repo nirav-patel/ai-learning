@@ -16,7 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import aisuite
+import anthropic
 
 import config
 from agents.copywriter_agent import CopywriterAgent
@@ -87,6 +87,11 @@ class CampaignPipeline:
 
         Uses settings from ``config.py`` (which reads from ``.env``).
 
+        Auth resolution order for AWS:
+        1. ``AWS_ACCESS_KEY_ID`` / ``AWS_SECRET_ACCESS_KEY`` env vars (or ``.env`` file).
+        2. ``AWS_PROFILE`` env var → named profile in ``~/.aws/credentials``.
+        3. IAM role attached to the EC2 instance / Lambda / ECS task.
+
         Args:
             output_dir: Override the output directory. Defaults to
                         ``config.OUTPUT_DIR``.
@@ -94,13 +99,25 @@ class CampaignPipeline:
         Returns:
             A ready-to-run ``CampaignPipeline``.
         """
-        import openai  # lazy import so the module loads without openai installed in tests
+        import boto3  # lazy import — optional at import time
 
         out = Path(output_dir) if output_dir else config.OUTPUT_DIR
 
-        llm_client = aisuite.Client()
+        boto3_kwargs: dict = {"region_name": config.AWS_REGION}
+        if config.AWS_ACCESS_KEY_ID and config.AWS_SECRET_ACCESS_KEY:
+            boto3_kwargs["aws_access_key_id"] = config.AWS_ACCESS_KEY_ID
+            boto3_kwargs["aws_secret_access_key"] = config.AWS_SECRET_ACCESS_KEY
 
-        image_client = openai.OpenAI(api_key=config.OPENAI_API_KEY)
+        # Single Anthropic Bedrock client for all text-based agents.
+        # Uses the same AWS credential chain as boto3.
+        anthropic_kwargs: dict = {"aws_region": config.AWS_REGION}
+        if config.AWS_ACCESS_KEY_ID and config.AWS_SECRET_ACCESS_KEY:
+            anthropic_kwargs["aws_access_key"] = config.AWS_ACCESS_KEY_ID
+            anthropic_kwargs["aws_secret_key"] = config.AWS_SECRET_ACCESS_KEY
+        llm_client = anthropic.AnthropicBedrock(**anthropic_kwargs)
+
+        # boto3 bedrock-runtime for Amazon Titan image generation.
+        image_client = boto3.client("bedrock-runtime", **boto3_kwargs)
 
         registry = (
             ToolRegistry()
@@ -128,12 +145,11 @@ class CampaignPipeline:
                 model=config.AGENT_MODEL,
                 image_model=config.IMAGE_MODEL,
                 image_size=config.IMAGE_SIZE,
-                image_quality=config.IMAGE_QUALITY,
                 output_dir=out,
             ),
             copywriter_agent=CopywriterAgent(
                 client=llm_client,
-                model=config.AGENT_MODEL,
+                model=config.COPYWRITER_MODEL,
             ),
             packaging_agent=PackagingAgent(
                 client=llm_client,

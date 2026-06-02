@@ -24,7 +24,7 @@ class MarketResearchAgent(BaseAgent):
     Uses the web + catalog tools to produce a trend summary.
 
     Args:
-        client: aisuite-compatible LLM client.
+        client: Anthropic Bedrock LLM client (`anthropic.AnthropicBedrock`).
         model: Model identifier.
         registry: ``ToolRegistry`` containing at least ``tavily_search_tool``
                   and ``product_catalog_tool``.
