@@ -1,0 +1,23 @@
+# LLM clients
+aisuite[openai]>=0.1.0
+openai>=1.30.0
+
+# Web search
+tavily-python>=0.5.0
+
+# Data
+pandas>=2.0.0
+
+# Image handling
+Pillow>=10.0.0
+
+# Config / env
+python-dotenv>=1.0.0
+
+# Testing
+pytest>=8.0.0
+pytest-cov>=5.0.0
+pytest-mock>=3.14.0
+
+# Optional: for nicer output
+rich>=13.0.0
