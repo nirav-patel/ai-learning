@@ -1,0 +1,112 @@
+[
+  {
+    "namespace": [
+      "email_assistant",
+      "john",
+      "collection"
+    ],
+    "key": "143e141c-18ff-42f9-a454-ee61e1251fd2",
+    "value": {
+      "content": "Alice Smith (alice.smith@company.com) flagged that two endpoints were missing from the API documentation for the new authentication service: /auth/refresh and /auth/validate. John confirmed the omission was NOT intentional and replied to Alice accordingly. John needs to follow up with the relevant team to get the API docs updated and keep Alice informed."
+    }
+  },
+  {
+    "namespace": [
+      "email_assistant",
+      "john",
+      "examples"
+    ],
+    "key": "ca2b7bbd-2e1e-4baa-a294-e5321adcabb1",
+    "value": {
+      "email": {
+        "author": "Alice Smith <alice.smith@company.com>",
+        "to": "John Doe <john.doe@company.com>",
+        "subject": "Quick question about API documentation",
+        "email_thread": "Hi John,\n\nI was reviewing the API documentation for the new authentication service and noticed a few endpoints seem to be missing from the specs. Could you help clarify if this was intentional or if we should update the docs?\n\nSpecifically, I'm looking at:\n- /auth/refresh\n- /auth/validate\n\nThanks!\nAlice"
+      },
+      "label": "respond"
+    }
+  },
+  {
+    "namespace": [
+      "email_assistant",
+      "john",
+      "examples"
+    ],
+    "key": "8527cac1-f967-47e5-9ff3-d1ec298b4062",
+    "value": {
+      "email": {
+        "author": "Sarah Chen <sarah.chen@company.com>",
+        "to": "John Doe <john.doe@company.com>",
+        "subject": "Update: Backend API Changes Deployed to Staging",
+        "email_thread": "Hi John,\n\nJust wanted to let you know that I've deployed the new authentication endpoints to the staging environment. All tests are passing and the changes are ready for review.\n\nNo immediate action needed from your side \u2014 just keeping you in the loop.\n\nBest regards,\nSarah"
+      },
+      "label": "ignore"
+    }
+  },
+  {
+    "namespace": [
+      "email_assistant",
+      "john",
+      "instructions"
+    ],
+    "key": "instructions",
+    "value": {
+      "triage_rules": {
+        "ignore": "Marketing newsletters, spam emails, mass company announcements",
+        "notify": "Team member out sick, build system notifications, project status updates",
+        "respond": "Direct questions from team members, meeting requests, critical bug reports"
+      },
+      "agent_instructions": "Use these tools when appropriate to help manage John's tasks efficiently."
+    }
+  },
+  {
+    "namespace": [
+      "email_assistant",
+      "john",
+      "profile"
+    ],
+    "key": "profile",
+    "value": {
+      "name": "John",
+      "full_name": "John Doe",
+      "user_profile_background": "Senior software engineer leading a team of 5 developers"
+    }
+  },
+  {
+    "namespace": [
+      "john"
+    ],
+    "key": "triage_ignore",
+    "value": {
+      "prompt": "Marketing newsletters, spam emails, mass company announcements"
+    }
+  },
+  {
+    "namespace": [
+      "john"
+    ],
+    "key": "triage_notify",
+    "value": {
+      "prompt": "Team member out sick, build system notifications, project status updates"
+    }
+  },
+  {
+    "namespace": [
+      "john"
+    ],
+    "key": "triage_respond",
+    "value": {
+      "prompt": "Direct questions from team members, meeting requests, critical bug reports"
+    }
+  },
+  {
+    "namespace": [
+      "john"
+    ],
+    "key": "agent_instructions",
+    "value": {
+      "prompt": "Use these tools when appropriate to help manage John's tasks efficiently. Always sign emails as `John Doe`."
+    }
+  }
+]
